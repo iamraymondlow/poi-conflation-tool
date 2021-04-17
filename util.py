@@ -198,3 +198,20 @@ def remove_duplicate(filename):
     # save json file on local directory
     with open(filename, 'w') as json_file:
         json.dump(feature_collection, json_file)
+
+
+def capitalise_string(string):
+    """
+    Capitalise the first letter of each word in a string. The original string may contain ().
+    """
+    capitalised_string = ''
+    string_list = string.lower().split(' ')
+    for i in range(len(string_list)):
+        if not string_list[i]:
+            continue
+        elif string_list[i][0] != '(':
+            capitalised_string += string_list[i].capitalize() + ' '
+        else:
+            capitalised_string += '(' + string_list[i][1:].capitalize() + ' '
+
+    return capitalised_string[:-1]

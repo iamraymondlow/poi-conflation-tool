@@ -1,7 +1,7 @@
 import json
 import pandas as pd
 import geopandas as gpd
-from util import remove_duplicate, extract_date
+from util import remove_duplicate, extract_date, capitalise_string
 from pyproj import Proj
 
 trade_codes = ['9ANSCH', '9ATM', '9CC', '9CCARE', '9CDEF', '9CENI', '9CHNTE', '9CHU', '9CLNI', '9COT',
@@ -43,23 +43,6 @@ def perform_mapping(gpd_file):
     return gpd_file
 
 
-def capitalise_string(string):
-    """
-    Capitalise the first letter of each word in a string. The original string may contain ().
-    """
-    capitalised_string = ''
-    string_list = string.lower().split(' ')
-    for i in range(len(string_list)):
-        if not string_list[i]:
-            continue
-        elif string_list[i][0] != '(':
-            capitalised_string += string_list[i].capitalize() + ' '
-        else:
-            capitalised_string += '(' + string_list[i][1:].capitalize() + ' '
-
-    return capitalised_string[:-1]
-
-
 def format_address(gpd_row):
     """
     Arrange the various address components into its respective fields in a dictionary format.
@@ -81,7 +64,7 @@ def format_address(gpd_row):
     if pd.notnull(gpd_row['POSTAL_CD']):
         formatted_address += 'Singapore ' + str(gpd_row['POSTAL_CD']) + ' '
 
-    return formatted_address
+    return formatted_address[:-1]
 
 
 def extract_tags(gpd_row):
