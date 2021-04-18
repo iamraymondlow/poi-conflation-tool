@@ -9,12 +9,9 @@ from util import remove_duplicate, extract_date, capitalise_string
 from tqdm import tqdm
 from shapely.geometry import Point
 
-here_app_key = 'ChgzzPNIMr-lHVXDqgEFpuV9HbOwLzcB5SCxHpy_l8s'
-onemap_api = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOjMyMTYsInVzZXJfaWQiOjMyMTYsImVtYWlsIjoiaWFtcmF5bW9uZGxvd0BnbWFpbC5jb20iLCJmb3JldmVyIjpmYWxzZSwiaXNzIjoiaHR0cDpcL1wvb20yLmRmZS5vbmVtYXAuc2dcL2FwaVwvdjJcL3VzZXJcL3Nlc3Npb24iLCJpYXQiOjE2MTgzMjM2OTcsImV4cCI6MTYxODc1NTY5NywibmJmIjoxNjE4MzIzNjk3LCJqdGkiOiI0OWRkMmEwOTM4YmM4NGZhOTVkNmRkNjAxYjk3MTU2ZiJ9.M6mLLCpBhXzbygvpW59ME4I-ZGCcbI5BHEzmbH6CKZk'
-wait_time = 5
-output_filename = 'data/osm/osm_poi.json'
-osm_filenames = ['gis_osm_pofw_a_free_1.shp', 'gis_osm_pois_a_free_1.shp', 'gis_osm_traffic_a_free_1.shp']
-search_radius = 20
+# load config file
+with open('config.json') as f:
+    config = json.load(f)
 
 
 def query_address(lat, lng):
@@ -24,8 +21,8 @@ def query_address(lat, lng):
     """
     # Pass query into Onemap for reverse geocoding
     geocode_url = 'https://developers.onemap.sg/privateapi/commonsvc/revgeocode?location={},{}'.format(lat, lng)
-    geocode_url += '&token={}'.format(onemap_api)
-    geocode_url += '&buffer={}'.format(search_radius)
+    geocode_url += '&token={}'.format(config['onemap_api_key'])
+    geocode_url += '&buffer={}'.format(config['osm_search_radius'])
     geocode_url += '&addressType=all'
 
     while True:
@@ -44,8 +41,8 @@ def query_address(lat, lng):
             return address
 
         except requests.exceptions.ConnectionError:
-            print('Connection Error. Pausing query for {} minutes...'.format(wait_time))
-            time.sleep(wait_time * 60)
+            print('Connection Error. Pausing query for {} minutes...'.format(config['wait_time']))
+            time.sleep(config['wait_time'] * 60)
 
         except:
             return None
@@ -130,7 +127,7 @@ def process_osm():
     country_shapefile = country_shapefile.to_crs(epsg='4326')
 
     # Import shape file for OSM POI data
-    for filename in osm_filenames:
+    for filename in config['osm_filenames']:
         poi_shp = gpd.read_file('data/osm/{}'.format(filename))
         poi_shp = poi_shp.to_crs(epsg="4326")
 
@@ -141,22 +138,22 @@ def process_osm():
                 formatted_poi = format_poi(poi_shp.iloc[i])
 
                 # save formatted POI data locally
-                if os.path.exists(output_filename):
-                    with open(output_filename) as json_file:
+                if os.path.exists(config['osm_output']):
+                    with open(config['osm_output']) as json_file:
                         feature_collection = json.load(json_file)
                         feature_collection['features'].append(formatted_poi)
 
-                    with open(output_filename, 'w') as json_file:
+                    with open(config['osm_output'], 'w') as json_file:
                         json.dump(feature_collection, json_file)
                 else:
-                    with open(output_filename, 'w') as json_file:
+                    with open(config['osm_output'], 'w') as json_file:
                         feature_collection = {'type': 'FeatureCollection', 'features': [formatted_poi]}
                         json.dump(feature_collection, json_file)
             else:
                 continue
 
     # Remove duplicated information
-    remove_duplicate(output_filename)
+    remove_duplicate(config['osm_output'])
 
 
 if __name__ == '__main__':

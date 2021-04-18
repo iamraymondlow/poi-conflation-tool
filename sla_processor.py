@@ -4,15 +4,9 @@ import geopandas as gpd
 from util import remove_duplicate, extract_date, capitalise_string
 from pyproj import Proj
 
-trade_codes = ['9ANSCH', '9ATM', '9CC', '9CCARE', '9CDEF', '9CENI', '9CHNTE', '9CHU', '9CLNI', '9COT',
-               '9FF', '9FLSCH', '9FSSCH', '9GNS', '9HDBBT', '9HEC', '9HOSP', '9HOSPI', '9HOT',
-               '9INDTE', '9INSEC', '9ITE', '9JC', '9KG', '9LBH', '9LIB', '9MOS', '9NPC', '9OTHIN',
-               '9PBCOM', '9PINT', '9PO', '9POL', '9POLY', '9PRI', '9PTL', '9RCLUB', '9RESCH',
-               '9SCARE', '9SCTRE', '9SEC', '9SHTEM', '9SPSCH', '9SPT', '9SWC', '9SYNA', '9TCH',
-               '9TI', '9VET', '9VI', '19BDPT', '19BINT', '19BTER']
-trade_types = ['H', 'B']
-data_types = ['EXTG', 'UC', 'PROP']
-output_filename = 'data/sla/sla_poi.json'
+# load config file
+with open('config.json') as f:
+    config = json.load(f)
 
 
 def perform_mapping(gpd_file):
@@ -23,19 +17,19 @@ def perform_mapping(gpd_file):
     abbreviation_list = placetype_mapping['trade_code'].tolist()
 
     # Perform mapping for TRADE_CODE
-    for trade_code in trade_codes:
+    for trade_code in config['sla_trade_codes']:
         tradecode_index = abbreviation_list.index(trade_code)
         index_list = gpd_file.index[gpd_file['TRADE_CODE'] == trade_code].tolist()
         gpd_file.loc[index_list, 'TRADE_CODE'] = placetype_mapping.loc[tradecode_index, 'google_mapping']
 
     # Perform mapping for TRADE_TYPE
-    for trade_type in trade_types:
+    for trade_type in config['sla_trade_types']:
         tradetype_index = abbreviation_list.index(trade_type)
         index_list = gpd_file.index[gpd_file['TRADE_TYPE'] == trade_type].tolist()
         gpd_file.loc[index_list, 'TRADE_TYPE'] = placetype_mapping.loc[tradetype_index, 'sla_placetype']
 
     # Perform mapping for DATA_TYPE
-    for data_type in data_types:
+    for data_type in config['sla_data_types']:
         datatype_index = abbreviation_list.index(data_type)
         index_list = gpd_file.index[gpd_file['DATA_TYPE_'] == data_type].tolist()
         gpd_file.loc[index_list, 'DATA_TYPE_'] = placetype_mapping.loc[datatype_index, 'sla_placetype']
@@ -110,7 +104,7 @@ def format_features(data):
 def process_sla():
     # import shape files
     data = None
-    for trade_code in trade_codes:
+    for trade_code in config['sla_trade_codes']:
         if data is None:
             data = gpd.read_file('data/sla/{}.shp'.format(trade_code))
         else:
@@ -128,13 +122,13 @@ def process_sla():
     data['LNG'] = lng
 
     # Transform into JSON format and save on local directory
-    with open(output_filename, 'w') as json_file:
+    with open(config['sla_output'], 'w') as json_file:
         feature_collection = {'type': 'FeatureCollection',
                               'features': format_features(data)}
         json.dump(feature_collection, json_file)
 
     # Remove duplicated information
-    remove_duplicate(output_filename)
+    remove_duplicate(config['sla_output'])
 
 
 if __name__ == '__main__':

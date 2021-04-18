@@ -7,13 +7,8 @@ import pandas as pd
 from shapely.geometry import Polygon
 
 # load config file
-
-
-# load parameters
-token = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOjMyMTYsInVzZXJfaWQiOjMyMTYsImVtYWlsIjoiaWFtcmF5bW9uZGxvd0BnbWFpbC5jb20iLCJmb3JldmVyIjpmYWxzZSwiaXNzIjoiaHR0cDpcL1wvb20yLmRmZS5vbmVtYXAuc2dcL2FwaVwvdjJcL3VzZXJcL3Nlc3Npb24iLCJpYXQiOjE2MTgzMjM2OTcsImV4cCI6MTYxODc1NTY5NywibmJmIjoxNjE4MzIzNjk3LCJqdGkiOiI0OWRkMmEwOTM4YmM4NGZhOTVkNmRkNjAxYjk3MTU2ZiJ9.M6mLLCpBhXzbygvpW59ME4I-ZGCcbI5BHEzmbH6CKZk'
-wait_time = 15  # sets the number of minutes to wait between each query when your API limit is reached
-output_filename = 'data/onemap/onemap_poi.json'
-file_directory = 'data/onemap'
+with open('config.json') as f:
+    config = json.load(f)
 
 
 def extract_query_name(themes):
@@ -23,7 +18,7 @@ def extract_query_name(themes):
     :return:
     """
     geocode_url = 'https://developers.onemap.sg/privateapi/themesvc/getAllThemesInfo'
-    geocode_url += '?token=' + str(token)
+    geocode_url += '?token=' + str(config['onemap_api_key'])
 
     while True:
         try:
@@ -34,8 +29,8 @@ def extract_query_name(themes):
             return list(theme_tuple), list(query_tuple)
 
         except requests.exceptions.ConnectionError:
-            print('Connection Error. Pausing query for {} minutes...'.format(wait_time))
-            time.sleep(wait_time)
+            print('Connection Error. Pausing query for {} minutes...'.format(config['wait_time']))
+            time.sleep(config['wait_time'])
 
 
 def extract_theme(theme):
@@ -49,7 +44,7 @@ def extract_theme(theme):
     # Pass query into OneMap API
     geocode_url = 'https://developers.onemap.sg/privateapi/themesvc/retrieveTheme'
     geocode_url += '?queryName=' + theme
-    geocode_url += '&token=' + token
+    geocode_url += '&token=' + config['onemap_api_key']
 
     while True:
         try:
@@ -169,34 +164,34 @@ def download_data():
                 not_successful = False
 
             except requests.exceptions.ConnectionError:
-                print('Connection Error. Pausing query for {} minutes...'.format(wait_time))
-                time.sleep(wait_time)
+                print('Connection Error. Pausing query for {} minutes...'.format(config['wait_time']))
+                time.sleep(config['wait_time'])
 
         i += 1
 
         # load local json file to store query output
-        if not os.path.exists('data/onemap'):
-            os.makedirs('data/onemap')
+        if not os.path.exists(config['onemap_directory']):
+            os.makedirs(config['onemap_directory'])
 
-        if os.path.exists(output_filename):
-            with open(output_filename) as json_file:
+        if os.path.exists(config['onemap_output']):
+            with open(config['onemap_output']) as json_file:
                 feature_collection = json.load(json_file)
                 feature_collection['features'] += format_query_result(query_result['SrchResults'][2:], themes[j],
                                                                       theme_mapping)
 
             # save query output as json file
-            with open(output_filename, 'w') as json_file:
+            with open(config['onemap_output'], 'w') as json_file:
                 json.dump(feature_collection, json_file)
 
         else:
-            with open(output_filename, 'w') as json_file:
+            with open(config['onemap_output'], 'w') as json_file:
                 feature_collection = {'type': 'FeatureCollection',
                                       'features': format_query_result(query_result['SrchResults'][2:], themes[j],
                                                                       theme_mapping)}
                 json.dump(feature_collection, json_file)
 
     # Remove duplicated information
-    remove_duplicate(output_filename)
+    remove_duplicate(config['onemap_output'])
 
 
 if __name__ == '__main__':

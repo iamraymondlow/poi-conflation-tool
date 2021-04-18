@@ -7,6 +7,10 @@ from util import translate_coordinate, identify_centroid, calculate_circle_radiu
 from shapely.geometry import Point
 import geopandas as gpd
 
+# load config file
+with open('config.json') as f:
+    config = json.load(f)
+
 
 def extract_poi(max_lat=None, max_lng=None, min_lat=None, min_lng=None, centre_lat=None, centre_lng=None, l=50.0,
                 h=50.0, api_key=None):
@@ -94,11 +98,6 @@ def pixelise_region(coordinates, shapefile):
 
 
 if __name__ == '__main__':
-    # Insert your own app id and app code. Refer to: https://developer.here.com/documentation/geocoder/common/credentials.html
-    api_key = 'ChgzzPNIMr-lHVXDqgEFpuV9HbOwLzcB5SCxHpy_l8s'
-    wait_time = 5  # sets the number of minutes to wait between each query when your API limit is reached
-    output_filename = 'data/heremap/heremap_poi_tampines.json'
-
     # The area of interest is defined using the coordinates of a bounding box (i.e. maximum latitude, maximum longitude, minimum latitude, minimum longitude).
     # Changi Business Park
     # max_lat = 1.339397
@@ -148,18 +147,18 @@ if __name__ == '__main__':
         while not_successful:
             try:
                 query_result = extract_poi(max_lat=coordinate[2], max_lng=coordinate[3], min_lat=coordinate[0],
-                                           min_lng=coordinate[1], api_key=api_key)
+                                           min_lng=coordinate[1], api_key=config['here_api_key'])
                 if query_result['results']['items']:
-                    if os.path.exists(output_filename):
-                        with open(output_filename) as json_file:
+                    if os.path.exists(config['here_output']):
+                        with open(config['here_output']) as json_file:
                             feature_collection = json.load(json_file)
                             feature_collection['features'] += format_query_result(query_result['results']['items'])
 
-                        with open(output_filename, 'w') as json_file:
+                        with open(config['here_output'], 'w') as json_file:
                             json.dump(feature_collection, json_file)
 
                     else:
-                        with open(output_filename, 'w') as json_file:
+                        with open(config['here_output'], 'w') as json_file:
                             feature_collection = {'type': 'FeatureCollection',
                                                   'features': format_query_result(query_result['results']['items'])}
                             json.dump(feature_collection, json_file)
@@ -170,14 +169,14 @@ if __name__ == '__main__':
                 not_successful = False
 
             except requests.exceptions.ConnectionError:
-                print('Connection Error. Pausing query for {} minutes...'.format(wait_time))
-                time.sleep(wait_time * 60)
+                print('Connection Error. Pausing query for {} minutes...'.format(config['wait_time']))
+                time.sleep(config['wait_time'] * 60)
 
             except ValueError:
-                print('Pausing query for {} minutes...'.format(wait_time))
-                time.sleep(wait_time * 60)
+                print('Pausing query for {} minutes...'.format(config['wait_time']))
+                time.sleep(config['wait_time'] * 60)
 
         i += 1
 
     # Removing duplicate data
-    remove_duplicate(output_filename)
+    remove_duplicate(config['wait_time'])

@@ -8,10 +8,9 @@ import matplotlib.pyplot as plt
 from util import translate_coordinate, identify_centroid, within_boundary_area, divide_bounding_box, remove_duplicate, extract_date, calculate_circle_radius
 from shapely.geometry import Point
 
-
-api_key = 'AIzaSyBJXIhdIjfHW9qOVJASnkcM8XuWK_A0Pw4'  # Insert your own google api key. Refer to: https://developers.google.com/maps/documentation/geocoding/get-api-key
-wait_time = 5  # sets the number of minutes to wait between each query when your API limit is reached
-output_filename = 'data/googlemap/googlemap_poi_tampines.json'
+# load config file
+with open('config.json') as f:
+    config = json.load(f)
 
 
 def format_coordinates(max_lat, max_lng, min_lat, min_lng, centre_lat, centre_lng):
@@ -159,7 +158,7 @@ def variable_bounding_box(max_lat, min_lat, max_lng, min_lng, querybox_dim, shap
         while not_successful:
             try:
                 query_result = extract_poi(max_lat=coordinate[2], max_lng=coordinate[3], min_lat=coordinate[0],
-                                           min_lng=coordinate[1], api_key=api_key)
+                                           min_lng=coordinate[1], api_key=config['google_api_key'])
 
                 if query_result['status'] == 'OK' or query_result['status'] == 'ZERO_RESULTS':
                     not_successful = False
@@ -177,12 +176,12 @@ def variable_bounding_box(max_lat, min_lat, max_lng, min_lng, querybox_dim, shap
                                                                                            query_result['status']))
 
                 else:
-                    print('Pausing query for {} minutes...'.format(wait_time))
-                    time.sleep(wait_time * 60)
+                    print('Pausing query for {} minutes...'.format(config['wait_time']))
+                    time.sleep(config['wait_time'] * 60)
 
             except requests.exceptions.ConnectionError:
-                print('Connection Error. Pausing query for {} minutes...'.format(wait_time))
-                time.sleep(wait_time * 60)
+                print('Connection Error. Pausing query for {} minutes...'.format(config['wait_time']))
+                time.sleep(config['wait_time'] * 60)
 
         i += 1
 
@@ -190,16 +189,16 @@ def variable_bounding_box(max_lat, min_lat, max_lng, min_lng, querybox_dim, shap
             continue
 
         if query_result['results']:
-            if os.path.exists(output_filename):
-                with open(output_filename) as json_file:
+            if os.path.exists(config['google_output']):
+                with open(config['google_output']) as json_file:
                     feature_collection = json.load(json_file)
                     feature_collection['features'].append(format_query_result(query_result['results']))
 
-                with open(output_filename, 'w') as json_file:
+                with open(config['google_output'], 'w') as json_file:
                     json.dump(feature_collection, json_file)
 
             else:
-                with open(output_filename, 'w') as json_file:
+                with open(config['google_output'], 'w') as json_file:
                     feature_collection = {'type': 'FeatureCollection',
                                           'features': [format_query_result(query_result['results'])]}
                     json.dump(feature_collection, json_file)
@@ -257,4 +256,4 @@ if __name__ == '__main__':
     plt.show()
 
     # Remove duplicated information
-    remove_duplicate(output_filename)
+    remove_duplicate(config['google_output'])
