@@ -192,7 +192,7 @@ def variable_bounding_box(max_lat, min_lat, max_lng, min_lng, querybox_dim, shap
             if os.path.exists(config['google_output']):
                 with open(config['google_output']) as json_file:
                     feature_collection = json.load(json_file)
-                    feature_collection['features'].append(format_query_result(query_result['results']))
+                    feature_collection['features'] += format_query_result(query_result['results'])
 
                 with open(config['google_output'], 'w') as json_file:
                     json.dump(feature_collection, json_file)
@@ -200,7 +200,7 @@ def variable_bounding_box(max_lat, min_lat, max_lng, min_lng, querybox_dim, shap
             else:
                 with open(config['google_output'], 'w') as json_file:
                     feature_collection = {'type': 'FeatureCollection',
-                                          'features': [format_query_result(query_result['results'])]}
+                                          'features': format_query_result(query_result['results'])}
                     json.dump(feature_collection, json_file)
 
         else:
