@@ -121,6 +121,7 @@ def within_boundary(poi, country_shapefile):
     else:
         return True
 
+
 def process_osm():
     # Import shapefile for Singapore
     country_shapefile = gpd.read_file('data/country_shapefiles/MP14_REGION_NO_SEA_PL.shp')
