@@ -12,8 +12,16 @@ with open('config.json') as f:
 def perform_mapping(gpd_file):
     """
     Maps the terms in the TRADE_CODE, TRADE_TYPE and DATA_TYPE fields into its human readable form.
+
+    :param gpd_file: geopandas dataframe
+        Contains the SLA dataset in its raw format.
+
+    :return:
+    gpd_file: geopandas dataframe
+        Contains the SLA dataset with its TRADE_CODE, TRADE_TYPE, and DATA_TYPE information mapped to its
+        human readable form.
     """
-    placetype_mapping = pd.read_excel('data/mappings/sla_mapping.xlsx')
+    placetype_mapping = pd.read_excel(config['sla_mapping'])
     abbreviation_list = placetype_mapping['trade_code'].tolist()
 
     # Perform mapping for TRADE_CODE
@@ -40,6 +48,13 @@ def perform_mapping(gpd_file):
 def format_address(gpd_row):
     """
     Arrange the various address components into its respective fields in a dictionary format.
+
+    :param gpd_row: geopandas series
+        Contains the unformatted POI information from SLA dataset with address information.
+
+    :return:
+    formatted_address: str
+        Contains the formatted address of a particular POI
     """
     formatted_address = ''
 
@@ -64,6 +79,13 @@ def format_address(gpd_row):
 def extract_tags(gpd_row):
     """
     Extract the trade brand, trade type and data type information as tag information in the POI.
+
+    :param gpd_row: geopandas series
+        Contains the POI information from the SLA dataset.
+
+    :return:
+    tags: dict
+        A dictionary of different tags assigned to the POI describing its parent entity, trade type and data type.
     """
     tags = {}
 
@@ -82,6 +104,13 @@ def extract_tags(gpd_row):
 def format_features(data):
     """
     Formats the POI features based on the custom schema.
+
+    :param data: geopandas dataframe
+        Contains the unformatted POI data from SLA.
+
+    :return:
+    features: list
+       Contains the formatted POI data formatted based on the custom schema.
     """
     features = []
     for i in range(len(data)):
@@ -101,7 +130,7 @@ def format_features(data):
     return features
 
 
-def process_sla():
+def main():
     # import shape files
     data = None
     for trade_code in config['sla_trade_codes']:
@@ -132,4 +161,4 @@ def process_sla():
 
 
 if __name__ == '__main__':
-    process_sla()
+    main()
