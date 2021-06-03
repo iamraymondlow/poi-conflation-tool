@@ -13,9 +13,16 @@ with open('config.json') as f:
 
 def extract_query_name(themes):
     """
+    Extracts the themes and query terms that are recognised within OneMap's servers.
 
-    :param themes:
+    :param themes: list
+        Contains a list of themes that are of interest.
+
     :return:
+    list(theme_tuple): list
+        Contains a list of the themes of interest.
+    list(query_tuple): list
+        Contains a list of the query terms that corresponds to the themes of interest.
     """
     geocode_url = 'https://developers.onemap.sg/privateapi/themesvc/getAllThemesInfo'
     geocode_url += '?token=' + str(config['onemap_api_key'])
@@ -35,11 +42,14 @@ def extract_query_name(themes):
 
 def extract_theme(theme):
     """
-    This function extracts all locations related to a particular theme.
+    This function downloads all point of interest from OneMap's servers that correspond to a particular theme.
 
-    :param theme:
+    :param theme: string
+        A string representing the theme of interest.
 
     :return:
+    requests.get(geocode_url).json(): json
+        Contains the downloaded POIs from OneMap in JSON format.
     """
     # Pass query into OneMap API
     geocode_url = 'https://developers.onemap.sg/privateapi/themesvc/retrieveTheme'
@@ -56,7 +66,15 @@ def extract_theme(theme):
 
 def extract_address(query_dict):
     """
-    Extracts the formatted address information of a POI by concatenating its address substrings.
+    Extracts the formatted string address of a POI by concatenating its address substrings.
+
+    :param query_dict: dict
+        Contains the address information of a POI split into different components (i.e., block number, street name,
+        etc)
+
+    :return:
+        formatted_address: str
+            Contains the concatenated address string for a particular POI.
     """
     formatted_address = ''
     if 'ADDRESSBLOCKHOUSENUMBER' in query_dict.keys() and query_dict['ADDRESSBLOCKHOUSENUMBER'] != 'null':
@@ -78,7 +96,16 @@ def extract_address(query_dict):
 
 def extract_polygon_centroid(polygon_coordinates):
     """
-    Extract the centroid of a POI that is represented as a polygon.
+    Extracts the centroid of a POI that is represented as a polygon.
+
+    :param polygon_coordinates: str
+        Contains the coordinates of a POI represented as a polygon.
+
+    :return:
+    centroid.y: float
+        Contains the latitude of the polygon's centroid.
+    centroid.x: float
+        Contains the longitude of the polygon's centroid.
     """
     coordinates = polygon_coordinates.split('|')
     bound_coordinates = [(float(latlng.split(',')[1]), float(latlng.split(',')[0])) for latlng in coordinates]
@@ -89,6 +116,13 @@ def extract_polygon_centroid(polygon_coordinates):
 def extract_tags(query_dict):
     """
     Extract the POI's description, address type and building name information as tags.
+
+    :param query_dict: dict
+        Contains the POI's description, address type and building name.
+
+    :return:
+    tags: dict
+        Contains the POI's description, address type and building if they are available.
     """
     tags = {}
     if "DESCRIPTION" in query_dict.keys() and query_dict['DESCRIPTION'] != 'null':
@@ -105,7 +139,16 @@ def extract_tags(query_dict):
 
 def map_placetype(theme, theme_mapping):
     """
-    Perform a mapping of the theme with Google's place type taxonomy.
+    Perform a mapping of OneMap's theme with Google's place type taxonomy.
+
+    :param theme: str
+        Contains OneMap's theme
+    :param theme_mapping: dataframe
+        Contains the mappings for each theme in OneMap with Google's taxonomy.
+
+    :return:
+    mapped_theme: str
+        Contains the mapped place type based on Google's taxonomy.
     """
     mapped_theme = theme_mapping[theme_mapping['themes'] == theme]['google_mapping'].tolist()[0]
     return mapped_theme
@@ -114,6 +157,17 @@ def map_placetype(theme, theme_mapping):
 def format_query_result(query_result, theme, theme_mapping):
     """
     This function takes in the result of the OneMap API and formats it into a JSON format.
+
+    :param query_result: list
+        Contains a list of POIs extracted directly from OneMap based on a particular theme.
+    :param theme: str
+        Contains the theme of the POI.
+    :param theme_mapping: dataframe
+        Contains the theme mappings for OneMap based on Google's taxonomy.
+
+    :return:
+    formatted_query: list
+        Contains a list of formatted POIs based on the custom schema.
     """
     formatted_query = []
 
@@ -121,7 +175,6 @@ def format_query_result(query_result, theme, theme_mapping):
         return formatted_query
 
     for i in range(len(query_result)):
-        bound_coordinates = None
         if '|' in query_result[i]['LatLng']:
             lat, lng = extract_polygon_centroid(query_result[i]['LatLng'])
         else:
@@ -146,7 +199,7 @@ def format_query_result(query_result, theme, theme_mapping):
     return formatted_query
 
 
-def download_data():
+def main():
     # Extract query name based on selected place types/themes
     theme_mapping = pd.read_excel('data/mappings/onemap_mapping.xlsx')
     themes, query_names = extract_query_name(theme_mapping['themes'].to_list())
@@ -195,4 +248,4 @@ def download_data():
 
 
 if __name__ == '__main__':
-    download_data()
+    main()
