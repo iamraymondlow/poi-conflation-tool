@@ -17,7 +17,16 @@ with open('config.json') as f:
 def query_address(lat, lng):
     """
     Perform reverse geocoding using the POI's latitude and longitude information to obtain address information from
-    HERE Maps.
+    OneMap.
+
+    :param lat: float
+        Contains the latitude of the POI.
+    :param lng: float
+        Contains the longitude of the POI.
+
+    :return:
+    address: str
+        Contains the formatted string address of the POI obtained using reverse geocoding.
     """
     # Pass query into Onemap for reverse geocoding
     geocode_url = 'https://developers.onemap.sg/privateapi/commonsvc/revgeocode?location={},{}'.format(lat, lng)
@@ -44,15 +53,19 @@ def query_address(lat, lng):
             print('Connection Error. Pausing query for {} minutes...'.format(config['wait_time']))
             time.sleep(config['wait_time'] * 60)
 
-        except:
-            return None
-
 
 def perform_mapping(place_type):
     """
     Performs mapping of OSM's place type to Google's taxonomy.
+
+    :param place_type: str
+        Contains the place type information of a particular POI from OSM.
+
+    :return:
+    Returns the original place type if there is no appropriate mapping and a boolean False value. Otherwise,
+    returns the mapped place type from Google's taxonomy and a boolean True value.
     """
-    placetype_mapping = pd.read_excel('data/mappings/osm_mapping.xlsx')
+    placetype_mapping = pd.read_excel(config['osm_mapping'])
     placetype_list = placetype_mapping[placetype_mapping['osm_placetype'] == place_type]['google_mapping'].tolist()
     if len(placetype_list) == 0:
         return place_type, False
@@ -65,6 +78,13 @@ def perform_mapping(place_type):
 def format_poi(poi):
     """
     Formats the POI into a JSON format.
+
+    :param poi: geopandas series
+        Contains a POI from OSM in its original format.
+
+    :return:
+    poi_dict: dict
+        Contains the formatted POI in the custom schema.
     """
     # Extract geometry information
     if poi.geometry.geom_type == 'Point':
@@ -102,7 +122,16 @@ def format_poi(poi):
 
 def within_boundary(poi, country_shapefile):
     """
-    Check if the POI fall within the study area.
+    Checks if the POI fall within the study area of Singapore.
+
+    :param poi: geopandas series
+        Contains the POI of interest in its raw format.
+    :param country_shapefile: shapefile
+        Contains a shapefile of Singapore.
+
+    :return:
+    True or False: bool
+        Indicates if the POI falls within the boundaries of Singapore or not.
     """
     if poi.geometry is None:  # ignore data point if it does not have geometry information
         return False
@@ -122,14 +151,14 @@ def within_boundary(poi, country_shapefile):
         return True
 
 
-def process_osm():
+def main():
     # Import shapefile for Singapore
-    country_shapefile = gpd.read_file('data/country_shapefiles/MP14_REGION_NO_SEA_PL.shp')
+    country_shapefile = gpd.read_file(config['country_shapefile'])
     country_shapefile = country_shapefile.to_crs(epsg='4326')
 
     # Import shape file for OSM POI data
     for filename in config['osm_filenames']:
-        poi_shp = gpd.read_file('data/osm/{}'.format(filename))
+        poi_shp = gpd.read_file(config['osm_data_directory'].format(filename))
         poi_shp = poi_shp.to_crs(epsg="4326")
 
         # format POI data
@@ -158,4 +187,4 @@ def process_osm():
 
 
 if __name__ == '__main__':
-    process_osm()
+    main()
