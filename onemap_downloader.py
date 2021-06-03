@@ -201,7 +201,7 @@ def format_query_result(query_result, theme, theme_mapping):
 
 def main():
     # Extract query name based on selected place types/themes
-    theme_mapping = pd.read_excel('data/mappings/onemap_mapping.xlsx')
+    theme_mapping = pd.read_excel(config['onemap_mapping'])
     themes, query_names = extract_query_name(theme_mapping['themes'].to_list())
     assert len(themes) == len(query_names)
 
