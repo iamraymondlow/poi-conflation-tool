@@ -135,9 +135,9 @@ def main():
     data = None
     for trade_code in config['sla_trade_codes']:
         if data is None:
-            data = gpd.read_file('data/sla/{}.shp'.format(trade_code))
+            data = gpd.read_file(config['sla_data_directory'].format(trade_code))
         else:
-            data = data.append(gpd.read_file('data/sla/{}.shp'.format(trade_code)))
+            data = data.append(gpd.read_file(config['sla_data_directory'].format(trade_code)))
     data.reset_index(drop=True, inplace=True)
 
     # Perform abbreviation mapping
