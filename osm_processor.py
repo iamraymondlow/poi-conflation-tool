@@ -53,6 +53,9 @@ def query_address(lat, lng):
             print('Connection Error. Pausing query for {} minutes...'.format(config['wait_time']))
             time.sleep(config['wait_time'] * 60)
 
+        except IndexError:
+            return "Singapore"
+
 
 def perform_mapping(place_type):
     """
