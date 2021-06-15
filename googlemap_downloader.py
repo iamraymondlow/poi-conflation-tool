@@ -2,258 +2,226 @@ import requests
 import json
 import os.path
 import time
-import numpy as np
-import geopandas as gpd
-import matplotlib.pyplot as plt
-from util import translate_coordinate, identify_centroid, within_boundary_area, divide_bounding_box, remove_duplicate, extract_date, calculate_circle_radius
-from shapely.geometry import Point
+from util import remove_duplicate, extract_date
 
 # load config file
 with open('config.json') as f:
     config = json.load(f)
 
 
-def format_coordinates(max_lat, max_lng, min_lat, min_lng, centre_lat, centre_lng):
+class GoogleMapScrapper:
     """
-    This function takes in the coordinates of the bounding box and its centroids to return a string of the following
-    format: 'centre_lat, centre_long&bounds=min_lat, min_lng|max_lat, max_lng'
+    Performs scrapping of nearby POI information from Google Map based on latitude and longitude information.
     """
-    centre_coordinate = str(centre_lat) + ', ' + str(centre_lng)
-    bottom_left_coordinate = str(min_lat) + ', ' + str(min_lng)
-    top_right_coordinate = str(max_lat) + ', ' + str(max_lng)
+    def __init__(self, radius):
+        self.search_radius = radius
 
-    return centre_coordinate + '&bounds=' + bottom_left_coordinate + '|' + top_right_coordinate
+    def extract_poi(self, lat, lng, stop_id):
+        """
+        Extracts the surrounding POIs near a particular stop either based on cached POI data or making API calls
+        on the fly to Google Places if the stop is encountered for the first time.
 
+        :param lat: float
+            Contains the latitude information of the stop.
+        :param lng: float
+            Contains the longitude information of the stop.
+        :param stop_id: str
+            Contains the unique ID of the stop.
 
-def extract_name(query_result):
-    """
-    This function extracts the name information of the POI from the query result. In the case where the name information
-    is unavailable, a NAN value is returned.
-    """
-    if 'name' in query_result.keys():
-        return query_result['name']
-    else:
-        return None
+        :return:
+        dict
+            Contains the surrounding POIs found near the stop formatted based on a custom schema.
+        """
+        if os.path.exists(config['google_cache']):  # check if cache exist
+            with open(config['google_cache']) as json_file:
+                feature_collection = json.load(json_file)
 
+            # check if cache contains the POI for this stop
+            filtered_features = [item for item in feature_collection['features'] if item['stop'] == stop_id]
 
-def extract_poi(max_lat=None, max_lng=None, min_lat=None, min_lng=None, lat=None, lng=None, l=50.0, h=50.0,
-                api_key=None):
-    """
-    This function extracts all POI information found within a bounding box defined by its edges
-    (i.e. max_lat, max_lng, min_lat, min_lng).
-    In the case where the edges of the bounding box are not defined, the function also accepts a
-    single latitude, longitude pair which will be translated into a l x h area (m^2) bounding
-    box.
-    """
+            if len(filtered_features) > 0:  # cache contains POIs for this stop
+                return {"type": "FeatureCollection", "features": filtered_features}
 
-    # Generate bounding box coordinates
-    if (max_lat is None) & (max_lng is None) & (min_lat is None) & (min_lng is None) & (lat is None) & (lng is None):
-        raise ValueError('Please either provide a bounding box defined by its edges (i.e. maximum latitude, maximum longitude, minimum latitude, minimum longitude) or a single latitude, longitude pair')
+            else:  # cache does not contain POIs for this stop
+                filtered_features = self._query_poi(lat, lng, stop_id)
 
-    elif (lat is not None) & (lng is not None):
-        max_lat, max_lng, min_lat, min_lng = translate_coordinate(lat, lng, l, h)
+                return {"type": "FeatureCollection", "features": filtered_features}
 
-    elif (max_lat is not None) & (max_lng is not None) & (min_lat is not None) & (min_lng is not None):
-        lat, lng = identify_centroid(max_lat=max_lat, max_lng=max_lng, min_lat=min_lat, min_lng=min_lng)
+        else:  # cache does not exist
+            filtered_features = self._query_poi(lat, lng, stop_id)
 
-    else:
-        pass
+            return {"type": "FeatureCollection", "features": filtered_features}
 
-    if (max_lat is None) | (max_lng is None) | (min_lat is None) | (min_lng is None) | (lat is None) | (lng is None):
-        raise ValueError('Please either provide a bounding box defined by its edges (i.e. maximum latitude, maximum longitude, minimum latitude, minimum longitude) or a single latitude, longitude pair')
+    def _query_poi(self, lat, lng, stop_id):
+        """
+        Performs an API query on the surrounding POIs and caches the resulting POIs.
 
-    radius = calculate_circle_radius(max_lat, max_lng, lat, lng)
+        :param lat: float
+            Contains the latitude information of the stop.
+        :param lng: float
+            Contains the longitude information of the stop.
+        :param stop_id: str
+            Contains the unique ID of the stop.
 
-    # Pass query into Google Places API
-    geocode_url = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json'
-    params = dict(key=api_key,
-                  location=str(lat)+','+str(lng),
-                  radius=str(radius))
-
-    query_result = requests.get(url=geocode_url, params=params)
-
-    return query_result.json()
-
-
-def concat_placetype(placetype_list):
-    combined_placetype = ''
-    for placetype in placetype_list:
-        combined_placetype += placetype + '; '
-    return combined_placetype[:-2]
-
-
-def format_query_result(query_result):
-    """
-    This function takes in the result of the Google Map API and formats it into a list of dictionary which will be
-    returned.
-    """
-    poi_data = []
-    for i in range(len(query_result)):
-        # extract geo-coordinates
-        lat = query_result[i]['geometry']['location']['lat']
-        lng = query_result[i]['geometry']['location']['lng']
-        geometry = {'lat': lat, 'lng': lng}
-
-        if not within_boundary_area(lat, lng, min_lat, max_lat, min_lng, max_lng):
-            continue
-
-        ignored_placetypes = ['route', 'neighborhood']
-        if bool(set(ignored_placetypes) & set(query_result[i]['types'])):
-            continue
-
-        if 'vicinity' in query_result[i].keys():
-            address = query_result[i]['vicinity']
-        else:
-            address = None
-
-        poi_dict = {
-            'type': 'Feature',
-            'geometry': geometry,
-            'properties': {'address': address,
-                           'name': extract_name(query_result[i]),
-                           'place_type': concat_placetype(query_result[i]['types']),
-                           'source': 'GoogleMap',
-                           'requires_verification': {'summary': 'No'}},
-            'id': str(query_result[i]['place_id']),
-            'extraction_date': extract_date()
-        }
-        poi_data.append(poi_dict)
-
-    return poi_data
-
-
-def pixelise_region(coordinates, shapefile):
-    """
-    This function filters out a list of coordinates based on whether it intersects with the study area's shapefile.
-    """
-    return [coordinate for coordinate in coordinates if
-            (np.sum(shapefile['geometry'].apply(lambda x: Point(coordinate[1], coordinate[0]).within(x))) != 0) |
-            (np.sum(shapefile['geometry'].apply(lambda x: Point(coordinate[3], coordinate[0]).within(x))) != 0) |
-            (np.sum(shapefile['geometry'].apply(lambda x: Point(coordinate[1], coordinate[2]).within(x))) != 0) |
-            (np.sum(shapefile['geometry'].apply(lambda x: Point(coordinate[3], coordinate[2]).within(x))) != 0)]
-
-
-def variable_bounding_box(max_lat, min_lat, max_lng, min_lng, querybox_dim, shapefile, print_progress=True):
-    """
-    A recursive function that calls itself each time the number of results returned per query reaches the upper limit
-    set by Google. Each time same function is called, the query box dimensions will be halved until it reaches a
-    lower limit.
-    """
-    global num_queries
-
-    # Obtain a list of coordinates for the preliminary set of bounding boxes
-    coordinate_list = divide_bounding_box(max_lat=max_lat, min_lat=min_lat, max_lng=max_lng, min_lng=min_lng,
-                                          querybox_dim=querybox_dim)
-    coordinate_list = pixelise_region(coordinate_list, shapefile_tampines)
-
-    # Extract POI information
-    i = 1
-    for coordinate in coordinate_list:
-        if print_progress:
-            print('Processing query {}/{}'.format(i, len(coordinate_list)))
-
-        num_queries += 1
-
+        :return:
+        """
         not_successful = True
         while not_successful:
             try:
-                query_result = extract_poi(max_lat=coordinate[2], max_lng=coordinate[3], min_lat=coordinate[0],
-                                           min_lng=coordinate[1], api_key=config['google_api_key'])
+                query_result = self._perform_query(lat=lat, lng=lng)
 
-                if query_result['status'] == 'OK' or query_result['status'] == 'ZERO_RESULTS':
-                    not_successful = False
-                    time.sleep(1)
+                if query_result['results']:
+                    formatted_results = self._format_query_result(query_result['results'], stop_id)
 
-                    if query_result['status'] == 'ZERO_RESULTS' or len(query_result['results']) < 20:
-                        box_dimensions.append(querybox_dim)
-                    elif len(query_result['results']) >= 20 and querybox_dim/2 >= 2.5:
-                        variable_bounding_box(coordinate[2], coordinate[0], coordinate[3], coordinate[1],
-                                              querybox_dim/2, shapefile, print_progress=False)
-                    elif len(query_result['results']) >= 20 and querybox_dim/2 < 2.5:
-                        box_dimensions.append(querybox_dim)
-                    else:
-                        raise ValueError('Number of queries: {} | Query result: {}'.format(len(query_result['results']),
-                                                                                           query_result['status']))
+                    # extract the other POIs stored in the next page
+                    while 'next_page_token' in query_result:
+                        query_result = self._perform_query(next_page_token=query_result['next_page_token'])
+                        formatted_results += self._format_query_result(query_result['results'], stop_id)
+
+                    # store results as cache
+                    if not os.path.exists(config['google_directory']):
+                        os.makedirs(config['google_directory'])
+
+                    if os.path.exists(config['google_cache']):  # cache exists
+                        with open(config['google_cache']) as json_file:
+                            feature_collection = json.load(json_file)
+                            feature_collection['features'] += formatted_results
+
+                        with open(config['google_cache'], 'w') as json_file:
+                            json.dump(feature_collection, json_file)
+
+                    else:  # cache does not exist
+                        with open(config['google_cache'], 'w') as json_file:
+                            feature_collection = {'type': 'FeatureCollection',
+                                                  'features': formatted_results}
+                            json.dump(feature_collection, json_file)
+
+                    # Removing duplicate data
+                    remove_duplicate(config['google_cache'])
+
+                    return formatted_results
 
                 else:
-                    print('Pausing query for {} minutes...'.format(config['wait_time']))
-                    time.sleep(config['wait_time'] * 60)
+                    return []
 
             except requests.exceptions.ConnectionError:
                 print('Connection Error. Pausing query for {} minutes...'.format(config['wait_time']))
                 time.sleep(config['wait_time'] * 60)
 
-        i += 1
+            except ValueError:
+                print('Pausing query for {} minutes...'.format(config['wait_time']))
+                time.sleep(config['wait_time'] * 60)
 
-        if query_result['status'] == 'ZERO_RESULTS':
-            continue
+    def _perform_query(self, lat=None, lng=None, next_page_token=None):
+        """
+        Extracts all POIs within a bounding circle using the Google Places API.
 
-        if query_result['results']:
-            if os.path.exists(config['google_output']):
-                with open(config['google_output']) as json_file:
-                    feature_collection = json.load(json_file)
-                    feature_collection['features'] += format_query_result(query_result['results'])
+        :param lat: float
+            Contains the latitude information of the stop.
+        :param lng: float
+            Contains the longitude information of the stop.
+        :param next_page_token: str
+            Contains the page token information for queries that have more than 20 results.
 
-                with open(config['google_output'], 'w') as json_file:
-                    json.dump(feature_collection, json_file)
+        :return:
+        query_result.json(): list
+            Contains a list of POIs surrounding the stop.
+        """
+        # Pass query into Google Places API
+        geocode_url = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json'
 
-            else:
-                with open(config['google_output'], 'w') as json_file:
-                    feature_collection = {'type': 'FeatureCollection',
-                                          'features': format_query_result(query_result['results'])}
-                    json.dump(feature_collection, json_file)
+        if (lat is not None) and (lng is not None):
+            params = dict(key=config['google_api_key'],
+                          location=str(lat)+','+str(lng),
+                          radius=str(self.search_radius))
+
+        elif next_page_token is not None:
+            time.sleep(3)  # sleep for a few seconds for the page token to become valid
+            params = dict(key=config['google_api_key'],
+                          pagetoken=next_page_token)
 
         else:
-            continue
+            raise ValueError('User must either provide the lat/lng information or next_page_token information')
 
-    return None
+        query_result = requests.get(url=geocode_url, params=params)
 
+        return query_result.json()
 
-if __name__ == '__main__':
-    # Define area of interest
-    # Changi Business Park
-    # max_lat = 1.339397
-    # min_lat = 1.331747
-    # max_lng = 103.969027
-    # min_lng = 103.961258
+    def _extract_name(self, query_result):
+        """
+        Extracts the name information for a neighbouring POI. In the case, where the name information
+        is not available, an empty string is returned instead.
 
-    # Singapore
-    # max_lat = 1.4758
-    # min_lat = 1.15
-    # max_lng = 104.0939
-    # min_lng = 103.6005
+        :param query_result: dict
+            Contains the information for a particular POI.
 
-    # Tampines
-    max_lat = 1.3892
-    min_lat = 1.3268
-    max_lng = 103.9918
-    min_lng = 103.8903
+        :return:
+        str:
+            Contains the name information for a particular POI.
+        """
+        if 'name' in query_result.keys():
+            return query_result['name']
+        else:
+            return ''
 
-    # Define the dimensions of the query box (assumed to take the shape of a square)
-    querybox_dim = 100.0
+    def _concat_placetype(self, placetype_list):
+        """
+        Concatenates the list of place types into a single string.
 
-    num_queries = 0
+        :param placetype_list: list
+            Contains the list of place types from Google Places.
 
-    # Import shapefile
-    shapefile_df = gpd.read_file('master-plan-2014-planning-area-boundary-web/master-plan-2014-planning-area-boundary-web-shp/MP14_PLNG_AREA_WEB_PL.shp')
-    shapefile_df = shapefile_df.to_crs(epsg="4326")
-    shapefile_tampines = shapefile_df[shapefile_df['PLN_AREA_N'] == 'TAMPINES'].reset_index(drop=True)
+        :return:
+        combined_placetype[:-2]: str
+            Contains the concatenated place types in a single string.
+        """
+        combined_placetype = ''
+        for placetype in placetype_list:
+            combined_placetype += placetype + '; '
+        return combined_placetype[:-2]
 
-    # Perform variable bounding box algorithm
-    box_dimensions = []
-    variable_bounding_box(max_lat, min_lat, max_lng, min_lng, querybox_dim, shapefile_tampines)
-    print('Total number of queries made: {}'.format(num_queries))
+    def _format_query_result(self, query_result, stop_id):
+        """
+        This function takes in the result of the Google Map API and formats it based on a custom schema.
 
-    # Store dimension information
-    with open('box_dim.json', 'w') as json_file:
-        dimensions_dict = {'results': box_dimensions}
-        json.dump(dimensions_dict, json_file)
+        :param query_result: dict
+            Contains the original attributes of a POI from Google Places.
+        :param stop_id: str
+            Contains the unique ID of the stop.
 
-    # Plot dimension information using histogram
-    plt.hist(box_dimensions, bins=20)
-    plt.ylabel('Frequency')
-    plt.xlabel('Final Bounding Box Dimensions')
-    plt.show()
+        :return:
+        poi_data: list
+            Contains a list of the formatted POIs based on the custom schema.
+        """
+        poi_data = []
+        for i in range(len(query_result)):
+            # extract latitude and longitude information
+            lat = query_result[i]['geometry']['location']['lat']
+            lng = query_result[i]['geometry']['location']['lng']
 
-    # Remove duplicated information
-    remove_duplicate(config['google_output'])
+            # remove irrelevant place types
+            ignored_placetypes = ['route', 'neighborhood']
+            if bool(set(ignored_placetypes) & set(query_result[i]['types'])):
+                continue
+
+            # extract address information
+            if 'vicinity' in query_result[i].keys():
+                address = query_result[i]['vicinity']
+            else:
+                address = 'Singapore'
+
+            poi_dict = {
+                'type': 'Feature',
+                'geometry': {'lat': lat, 'lng': lng},
+                'properties': {'address': address,
+                               'name': self._extract_name(query_result[i]),
+                               'place_type': self._concat_placetype(query_result[i]['types']),
+                               'source': 'GoogleMap',
+                               'requires_verification': {'summary': 'No'}},
+                'stop': stop_id,
+                'id': str(query_result[i]['place_id']),
+                'extraction_date': extract_date()
+            }
+            poi_data.append(poi_dict)
+
+        return poi_data
