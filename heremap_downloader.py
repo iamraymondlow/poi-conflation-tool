@@ -1,172 +1,102 @@
 import requests
-import numpy as np
 import json
+import pandas as pd
 import os.path
 import time
-from util import translate_coordinate, identify_centroid, calculate_circle_radius, within_boundary_area, divide_bounding_box, remove_duplicate, extract_date
-from shapely.geometry import Point
-import geopandas as gpd
+from util import remove_duplicate, extract_date
 
 # load config file
 with open('config.json') as f:
     config = json.load(f)
 
 
-def extract_poi(max_lat=None, max_lng=None, min_lat=None, min_lng=None, centre_lat=None, centre_lng=None, l=50.0,
-                h=50.0, api_key=None):
+class HereMapScrapper:
     """
-    This function extracts all landmarks found within a bounding circle defined within a box (with its edges described
-    using the following information: max_lat, max_lng, min_lat, min_long).
-    In the case where the edges of the bounding box are not defined, the function also accepts a single latitude,
-    longitude pair which will be translated into a l x h area (m^2) bounding box. Finally, the landmarks found within
-    a bounding circle fitting into the bounding box will be extracted.
+    Performs scrapping of nearby POI information from Here Map based on latitude and longitude information.
     """
-    # Generate bounding box coordinates
-    if (max_lat is None) & (max_lng is None) & (min_lat is None) & (min_lng is None) & (centre_lat is None) & (centre_lng is None):
-        raise ValueError('Please either provide a bounding box defined by its edges (i.e. maximum latitude, maximum longitude, minimum latitude, minimum longitude) or a single latitude, longitude pair')
+    def __init__(self, radius):
+        self.search_radius = radius
 
-    elif (centre_lat is not None) & (centre_lng is not None):
-        max_lat, max_lng, min_lat, min_lng = translate_coordinate(centre_lat, centre_lng, l, h)
+    def extract_poi(self, lat, lng, stop_id):
+        """
+        Extracts the surrounding POIs near a particular stop either based on cached POI data or making API calls
+        on the fly to HERE Map if the stop is encountered for the first time.
 
-    elif (max_lat is not None) & (max_lng is not None) & (min_lat is not None) & (min_lng is not None):
-        centre_lat, centre_lng = identify_centroid(max_lat=max_lat, max_lng=max_lng, min_lat=min_lat, min_lng=min_lng)
+        :param lat: float
+            Contains the latitude information of the stop.
+        :param lng: float
+            Contains the longitude information of the stop.
+        :param stop_id: str
+            Contains the unique ID of the stop.
+        :return:
+        dict
+            Contains the surrounding POIs found near the stop formatted based on a custom schema.
+        """
+        if os.path.exists(config['here_cache']):  # check if cache exist
+            with open(config['here_cache']) as json_file:
+                feature_collection = json.load(json_file)
 
-    else:
-        pass
+            # check if cache contains the POI for this stop
+            filtered_features = [item for item in feature_collection['features'] if item['assigned_to'] == stop_id]
 
-    if (max_lat is None) | (max_lng is None) | (min_lat is None) | (min_lng is None) | (centre_lat is None) | (centre_lng is None):
-        raise ValueError('Please either provide a bounding box defined by its edges (i.e. maximum latitude, maximum longitude, minimum latitude, minimum longitude) or a single latitude, longitude pair')
+            if len(filtered_features) > 0:  # cache contains POIs for this stop
+                return {"type": "FeatureCollection", "features": filtered_features}
 
-    radius = calculate_circle_radius(max_lat, max_lng, centre_lat, centre_lng)
+            else:  # cache does not contain POIs for this stop
+                filtered_features = self._query_poi(lat, lng, stop_id)
 
-    # Pass query into HERE API
-    geocode_url = 'https://places.ls.hereapi.com/places/v1/discover/explore'
-    geocode_url += '?apiKey=' + api_key
-    geocode_url += '&in=' + str(centre_lat) + ',' + str(centre_lng) + ';r=' + str(radius)
-    geocode_url += '&size' + str(9999)
-    geocode_url += '&pretty'
+                return {"type": "FeatureCollection", "features": filtered_features}
 
-    return requests.get(geocode_url).json()
+        else:  # cache does not exist
+            filtered_features = self._query_poi(lat, lng, stop_id)
 
+            return {"type": "FeatureCollection", "features": filtered_features}
 
-def format_query_result(query_result):
-    """
-    This function takes in the result of the HERE API and formats it
-    into a list of geojson dictionary which will be returned. The list will also be
-    saved as a local json file.
-    """
-    poi_data = []
-    for i in range(len(query_result)):
-        lat = query_result[i]['position'][0]
-        lng = query_result[i]['position'][1]
+    def _query_poi(self, lat, lng, stop_id):
+        """
+        Performs API query on the surrounding POIs
 
-        if not within_boundary_area(lat, lng, min_lat, max_lat, min_lng, max_lng):
-            continue
-
-        if 'tags' in query_result[i].keys():
-            tags = query_result[i]['tags'][0]
-        else:
-            tags = {}
-
-        poi_dict = {
-            'type': 'Feature',
-            'geometry': {'lat': lat, 'lng': lng},
-            'properties': {'address': query_result[i]['vicinity'].replace('<br/>', ' '),
-                           'name': query_result[i]['title'],
-                           'place_type': query_result[i]['category']['id'],
-                           'tags': tags,
-                           'source': 'HereMap',
-                           'requires_verification': {'summary': 'No'}},
-            'id': str(query_result[i]['id']),
-            'extraction_date': extract_date()
-        }
-
-        poi_data.append(poi_dict)
-
-    return poi_data
-
-
-def pixelise_region(coordinates, shapefile):
-    """
-    This function filters out a list of coordinates based on whether it intersects with the study area's shapefile.
-    """
-    return [coordinate for coordinate in coordinates if
-            (np.sum(shapefile['geometry'].apply(lambda x: Point(coordinate[1], coordinate[0]).within(x))) != 0) |
-            (np.sum(shapefile['geometry'].apply(lambda x: Point(coordinate[3], coordinate[0]).within(x))) != 0) |
-            (np.sum(shapefile['geometry'].apply(lambda x: Point(coordinate[1], coordinate[2]).within(x))) != 0) |
-            (np.sum(shapefile['geometry'].apply(lambda x: Point(coordinate[3], coordinate[2]).within(x))) != 0)]
-
-
-if __name__ == '__main__':
-    # The area of interest is defined using the coordinates of a bounding box (i.e. maximum latitude, maximum longitude, minimum latitude, minimum longitude).
-    # Changi Business Park
-    # max_lat = 1.339397
-    # min_lat = 1.331747
-    # max_lng = 103.969027
-    # min_lng = 103.961258
-
-    # Orchard
-    # max_lat = 1.3206
-    # min_lat = 1.2897
-    # max_lng = 103.8562
-    # min_lng = 103.8153
-
-    # Singapore
-    # max_lat = 1.4758
-    # min_lat = 1.15
-    # max_lng = 104.0939
-    # min_lng = 103.6005
-
-    # Tampines
-    max_lat = 1.3892
-    min_lat = 1.3268
-    max_lng = 103.9918
-    min_lng = 103.8903
-
-    # Define the dimensions of the query box (assumed to take the shape of a square)
-    querybox_dim = 100.0
-
-    # Import shapefile
-    shapefile_df = gpd.read_file('master-plan-2014-planning-area-boundary-web/master-plan-2014-planning-area-boundary-web-shp/MP14_PLNG_AREA_WEB_PL.shp')
-    shapefile_df = shapefile_df.to_crs(epsg="4326")
-    shapefile_df = shapefile_df[shapefile_df['PLN_AREA_N'] == 'TAMPINES'].reset_index(drop=True)
-
-    # Obtain a list of coordinates for each query box
-    coordinate_list = divide_bounding_box(max_lat=max_lat, min_lat=min_lat, max_lng=max_lng, min_lng=min_lng,
-                                          querybox_dim=querybox_dim)
-    print('Number of queries before filtering: {}'.format(len(coordinate_list)))
-    coordinate_list = pixelise_region(coordinate_list, shapefile_df)
-    print('Number of queries after filtering: {}'.format(len(coordinate_list)))
-
-    # Extract POI information
-    i = 1
-    for coordinate in coordinate_list:
-        print('Processing query {}/{}'.format(i, len(coordinate_list)))
-
+        :param lat: float
+            Contains the latitude information of the stop.
+        :param lng: float
+            Contains the longitude information of the stop.
+        :param stop_id: str
+            Contains the unique ID of the stop.
+        :return:
+        """
         not_successful = True
         while not_successful:
             try:
-                query_result = extract_poi(max_lat=coordinate[2], max_lng=coordinate[3], min_lat=coordinate[0],
-                                           min_lng=coordinate[1], api_key=config['here_api_key'])
+                query_result = self._perform_query(lat=lat, lng=lng)
+
                 if query_result['results']['items']:
-                    if os.path.exists(config['here_output']):
-                        with open(config['here_output']) as json_file:
+                    formatted_results = self._format_query_result(query_result['results']['items'], stop_id)
+
+                    # store results as cache
+                    if not os.path.exists(config['here_directory']):
+                        os.makedirs(config['here_directory'])
+
+                    if os.path.exists(config['here_cache']):  # cache exists
+                        with open(config['here_cache']) as json_file:
                             feature_collection = json.load(json_file)
-                            feature_collection['features'] += format_query_result(query_result['results']['items'])
+                            feature_collection['features'] += formatted_results
 
-                        with open(config['here_output'], 'w') as json_file:
+                        with open(config['here_cache'], 'w') as json_file:
                             json.dump(feature_collection, json_file)
 
-                    else:
-                        with open(config['here_output'], 'w') as json_file:
+                    else:  # cache does not exist
+                        with open(config['here_cache'], 'w') as json_file:
                             feature_collection = {'type': 'FeatureCollection',
-                                                  'features': format_query_result(query_result['results']['items'])}
+                                                  'features': formatted_results}
                             json.dump(feature_collection, json_file)
+
+                    # Removing duplicate data
+                    remove_duplicate(config['here_cache'])
+
+                    return formatted_results
 
                 else:
-                    pass
-
-                not_successful = False
+                    return []
 
             except requests.exceptions.ConnectionError:
                 print('Connection Error. Pausing query for {} minutes...'.format(config['wait_time']))
@@ -176,7 +106,95 @@ if __name__ == '__main__':
                 print('Pausing query for {} minutes...'.format(config['wait_time']))
                 time.sleep(config['wait_time'] * 60)
 
-        i += 1
+    def _perform_query(self, lat, lng):
+        """
+        Extracts all POIs within a bounding circle using HERE Map API.
 
-    # Removing duplicate data
-    remove_duplicate(config['wait_time'])
+        :param lat: float
+            Contains the latitude information of the stop.
+        :param lng: float
+            Contains the longitude information of the stop.
+        :return:
+        list
+        Contains a list of POIs surrounding the stop.
+        """
+        # Pass query into HERE API
+        geocode_url = 'https://places.ls.hereapi.com/places/v1/discover/explore'
+        geocode_url += '?apiKey=' + config['here_api_key']
+        geocode_url += '&in=' + str(lat) + ',' + str(lng) + ';r=' + str(self.search_radius)
+        geocode_url += '&size' + str(9999)
+        geocode_url += '&pretty'
+
+        return requests.get(geocode_url).json()
+
+    def _map_placetype(self, placetype):
+        """
+        Perform a mapping of HERE Map's categories with Google's place type taxonomy.
+
+        :param placetype: str
+            Contains the POI's original place type based on HERE Map's taxonomy.
+
+        :return:
+        mapped_placetype[0]: str
+            Contains the mapped place type based on Google's taxonomy.
+        """
+        mapping = pd.read_excel(config['here_mapping'])
+        mapped_placetype = mapping[mapping['here_placetype'] == placetype]['google_mapping'].tolist()
+
+        if len(mapped_placetype) == 0:
+            return placetype, False
+        elif len(mapped_placetype) == 1:
+            return mapped_placetype[0], True
+        else:
+            raise ValueError('More than one mapping is found: {}'.format(mapped_placetype))
+
+    def _format_query_result(self, query_result, stop_id):
+        """
+        This function takes in the result of the HERE API and formats it into a list of geojson
+        dictionary which will be returned. The list will also be saved as a local json file.
+
+        :param query_result: list
+            Contains the original query results from HERE API.
+        :param stop_id: str
+            Contains the ID information of the stop.
+
+        :return:
+        poi_data: list
+            Contains the formatted query results from HERE API.
+        """
+        poi_data = []
+        for i in range(len(query_result)):
+            # extract latitude and longitude information
+            lat = query_result[i]['position'][0]
+            lng = query_result[i]['position'][1]
+
+            # extract tag information
+            if 'tags' in query_result[i].keys():
+                tags = query_result[i]['tags'][0]
+            else:
+                tags = {}
+
+            # perform mapping for place type information
+            mapped_placetype, mapping_successful = self._map_placetype(query_result[i]['category']['title'])
+
+            if mapping_successful:
+                verification = {'summary': 'No'}
+            else:
+                verification = {'summary': 'Yes', 'reason': 'Mapping not found'}
+
+            poi_dict = {
+                'type': 'Feature',
+                'geometry': {'lat': lat, 'lng': lng},
+                'properties': {'address': query_result[i]['vicinity'].replace('<br/>', ' '),
+                               'name': query_result[i]['title'],
+                               'place_type': mapped_placetype,
+                               'tags': tags,
+                               'source': 'HereMap',
+                               'requires_verification': verification},
+                'assigned_to': stop_id,
+                'id': str(query_result[i]['id']),
+                'extraction_date': extract_date()
+            }
+            poi_data.append(poi_dict)
+
+        return poi_data
