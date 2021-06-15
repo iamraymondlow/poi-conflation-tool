@@ -37,7 +37,7 @@ class HereMapScrapper:
                 feature_collection = json.load(json_file)
 
             # check if cache contains the POI for this stop
-            filtered_features = [item for item in feature_collection['features'] if item['assigned_to'] == stop_id]
+            filtered_features = [item for item in feature_collection['features'] if item['stop'] == stop_id]
 
             if len(filtered_features) > 0:  # cache contains POIs for this stop
                 return {"type": "FeatureCollection", "features": filtered_features}
@@ -191,7 +191,7 @@ class HereMapScrapper:
                                'tags': tags,
                                'source': 'HereMap',
                                'requires_verification': verification},
-                'assigned_to': stop_id,
+                'stop': stop_id,
                 'id': str(query_result[i]['id']),
                 'extraction_date': extract_date()
             }
