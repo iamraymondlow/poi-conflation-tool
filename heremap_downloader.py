@@ -54,7 +54,7 @@ class HereMapScrapper:
 
     def _query_poi(self, lat, lng, stop_id):
         """
-        Performs API query on the surrounding POIs
+        Performs an API query on the surrounding POIs and caches the resulting POIs.
 
         :param lat: float
             Contains the latitude information of the stop.
@@ -115,8 +115,8 @@ class HereMapScrapper:
         :param lng: float
             Contains the longitude information of the stop.
         :return:
-        list
-        Contains a list of POIs surrounding the stop.
+        requests.get(geocode_url).json(): list
+            Contains a list of POIs surrounding the stop.
         """
         # Pass query into HERE API
         geocode_url = 'https://places.ls.hereapi.com/places/v1/discover/explore'
