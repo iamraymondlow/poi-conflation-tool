@@ -1,12 +1,12 @@
 import requests
 import json
 import pandas as pd
-import os.path
+import os
 import time
 from util import remove_duplicate, extract_date
 
 # load config file
-with open('config.json') as f:
+with open(os.path.join(os.path.dirname(__file__), 'config.json')) as f:
     config = json.load(f)
 
 

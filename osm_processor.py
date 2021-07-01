@@ -1,6 +1,6 @@
 import requests
 import json
-import os.path
+import os
 import time
 import numpy as np
 import pandas as pd
@@ -10,7 +10,7 @@ from tqdm import tqdm
 from shapely.geometry import Point
 
 # load config file
-with open('config.json') as f:
+with open(os.path.join(os.path.dirname(__file__), 'config.json')) as f:
     config = json.load(f)
 
 
