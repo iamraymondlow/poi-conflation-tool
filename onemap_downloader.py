@@ -42,25 +42,25 @@ class OneMap:
             if not os.path.exists(config['onemap_directory']):
                 os.makedirs(config['onemap_directory'])
 
-            if os.path.exists(config['onemap_output']):
-                with open(config['onemap_output']) as json_file:
+            if os.path.exists(config['onemap_cache']):
+                with open(config['onemap_cache']) as json_file:
                     feature_collection = json.load(json_file)
                     feature_collection['features'] += self._format_query_result(query_result['SrchResults'][2:],
                                                                                 themes[j], theme_mapping)
 
                 # save query output as json file
-                with open(config['onemap_output'], 'w') as json_file:
+                with open(config['onemap_cache'], 'w') as json_file:
                     json.dump(feature_collection, json_file)
 
             else:
-                with open(config['onemap_output'], 'w') as json_file:
+                with open(config['onemap_cache'], 'w') as json_file:
                     feature_collection = {'type': 'FeatureCollection',
                                           'features': self._format_query_result(query_result['SrchResults'][2:],
                                                                                 themes[j], theme_mapping)}
                     json.dump(feature_collection, json_file)
 
         # Remove duplicated information
-        remove_duplicate(config['onemap_output'])
+        remove_duplicate(config['onemap_cache'])
 
     def _extract_query_name(self, themes):
         """

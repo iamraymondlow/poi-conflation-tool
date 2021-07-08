@@ -35,13 +35,13 @@ class SLA:
         data['LNG'] = lng
 
         # Transform into JSON format and save on local directory
-        with open(config['sla_output'], 'w') as json_file:
+        with open(config['sla_cache'], 'w') as json_file:
             feature_collection = {'type': 'FeatureCollection',
                                   'features': self._format_features(data)}
             json.dump(feature_collection, json_file)
 
         # Remove duplicated information
-        remove_duplicate(config['sla_output'])
+        remove_duplicate(config['sla_cache'])
 
     def _perform_mapping(self, gpd_file):
         """

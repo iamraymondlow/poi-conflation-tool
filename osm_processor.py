@@ -35,22 +35,22 @@ class OSM:
                     formatted_poi = self._format_poi(poi_shp.iloc[i])
 
                     # save formatted POI data locally
-                    if os.path.exists(config['osm_output']):
-                        with open(config['osm_output']) as json_file:
+                    if os.path.exists(config['osm_cache']):
+                        with open(config['osm_cache']) as json_file:
                             feature_collection = json.load(json_file)
                             feature_collection['features'].append(formatted_poi)
 
-                        with open(config['osm_output'], 'w') as json_file:
+                        with open(config['osm_cache'], 'w') as json_file:
                             json.dump(feature_collection, json_file)
                     else:
-                        with open(config['osm_output'], 'w') as json_file:
+                        with open(config['osm_cache'], 'w') as json_file:
                             feature_collection = {'type': 'FeatureCollection', 'features': [formatted_poi]}
                             json.dump(feature_collection, json_file)
                 else:
                     continue
 
         # Remove duplicated information
-        remove_duplicate(config['osm_output'])
+        remove_duplicate(config['osm_cache'])
 
     def _query_address(self, lat, lng):
         """
