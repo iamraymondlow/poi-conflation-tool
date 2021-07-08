@@ -118,8 +118,8 @@ class OneMap:
         Extracts the formatted string address of a POI by concatenating its address substrings.
 
         :param query_dict: dict
-            Contains the address information of a POI split into different components (i.e., block number, street name,
-            etc)
+            Contains the address information of a POI split into different components (i.e., block number,
+            street name, etc)
 
         :return:
             formatted_address: str
@@ -140,7 +140,11 @@ class OneMap:
 
         if 'ADDRESSPOSTALCODE' in query_dict.keys() and query_dict['ADDRESSPOSTALCODE'] != 'null':
             formatted_address += 'Singapore ' + query_dict['ADDRESSPOSTALCODE'] + ' '
-        return formatted_address[:-1]
+
+        if formatted_address == '':
+            return 'Singapore'
+        else:
+            return formatted_address[:-1]
 
     def _extract_polygon_centroid(self, polygon_coordinates):
         """
