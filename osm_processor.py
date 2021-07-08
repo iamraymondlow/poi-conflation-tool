@@ -52,6 +52,26 @@ class OSM:
         # Remove duplicated information
         remove_duplicate(config['osm_cache'])
 
+    def _check_valid_address_string(self, query_result, address_segment):
+        """
+        Checks if the address is None, contains empty strings, or Nil values.
+
+        :param query_result: dictionary
+            Contains the address information.
+        :param address_segment: str
+            Contains the specific segment in the address for checking.
+        :return:
+        bool
+            Indicates if the address string is valid or not.
+        """
+        if address_segment not in query_result['GeocodeInfo'][0]:
+            return False
+        if not query_result['GeocodeInfo'][0][address_segment] \
+                or query_result['GeocodeInfo'][0][address_segment].lower() in ['', 'nil']:
+            return False
+
+        return True
+
     def _query_address(self, lat, lng):
         """
         Perform reverse geocoding using the POI's latitude and longitude information to obtain address information from
@@ -77,15 +97,19 @@ class OSM:
                 query_result = requests.get(geocode_url).json()
                 address = ''
                 # take the address from the first query result in the list
-                if 'BLOCK' in query_result['GeocodeInfo'][0]:
+                if self._check_valid_address_string(query_result, 'BLOCK'):
                     address += query_result['GeocodeInfo'][0]['BLOCK'] + ' '
-                if 'ROAD' in query_result['GeocodeInfo'][0]:
+                if self._check_valid_address_string(query_result, 'ROAD'):
                     address += query_result['GeocodeInfo'][0]['ROAD'] + ' '
-                if 'POSTALCODE' in query_result['GeocodeInfo'][0]:
+                if self._check_valid_address_string(query_result, 'POSTALCODE'):
                     address += 'Singapore ' + query_result['GeocodeInfo'][0]['POSTALCODE'] + ' '
 
                 address = capitalise_string(address[:-1])
-                return address
+
+                if address == '':
+                    return 'Singapore'
+                else:
+                    return address
 
             except requests.exceptions.ConnectionError:
                 print('Connection Error. Pausing query for {} minutes...'.format(config['wait_time']))
@@ -155,6 +179,9 @@ class OSM:
             'id': str(poi['osm_id']),
             'extraction_date': extract_date()
         }
+
+        if poi['name']:
+            poi_dict['properties']['name'] = poi['name']
 
         return poi_dict
 
