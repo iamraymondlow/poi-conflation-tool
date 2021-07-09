@@ -4,6 +4,8 @@ import train_model
 import pandas as pd
 import geopandas as gpd
 import pyproj
+from googlemap_downloader import GoogleMapScrapper
+from heremap_downloader import HereMapScrapper
 from onemap_downloader import OneMap
 from osm_processor import OSM
 from sla_processor import SLA
@@ -50,14 +52,16 @@ class POIConflationTool:
         if os.path.exists(os.path.join(os.path.dirname(__file__), config['google_cache'])):
             self.google_data = self._load_json_as_geopandas(config['google_cache'])
         else:
-            self.google_data = gpd.GeoDataFrame()
+            self.google_data = None
+        self.google_scrapper = GoogleMapScrapper(config['search_radius'])
 
         # load formatted HERE Map data. If it does not exist, save as None.
         print('Loading HERE Map data from local directory...')
         if os.path.exists(os.path.join(os.path.dirname(__file__), config['here_cache'])):
             self.here_data = self._load_json_as_geopandas(config['here_cache'])
         else:
-            self.here_data = gpd.GeoDataFrame()
+            self.here_data = None
+        self.here_scrapper = HereMapScrapper(config['search_radius'])
 
         # check if machine learning model is trained. If not, train model.
         # if not os.listdir(os.path.exists(os.path.join(os.path.dirname(__file__), config['models_directory']))):
@@ -125,28 +129,35 @@ class POIConflationTool:
         buffer = self._buffer_in_meters(lng, lat, config['search_radius'])
 
         # extracts neighbouring POIs from OSM
-        osm_intersect = self.osm_data[self.osm_data.intersects(buffer)]
+        osm_pois = self.osm_data[self.osm_data.intersects(buffer)]
 
         # extract neighbouring POIs from OneMap
-        onemap_intersect = self.onemap_data[self.onemap_data.intersects(buffer)]
+        onemap_pois = self.onemap_data[self.onemap_data.intersects(buffer)]
 
         # extract neighbouring POIs from SLA
-        sla_intersect = self.sla_data[self.sla_data.intersects(buffer)]
+        sla_pois = self.sla_data[self.sla_data.intersects(buffer)]
 
         # query neighbouring POIs from GoogleMap
-        # google_intersect = self.google_data[self.google_data.intersects(buffer)]
+        if self.google_data and stop_id in self.google_data['stop'].tolist():
+            google_pois = self.google_data[self.google_data['stop'] == stop_id]
+        else:
+            google_pois = self.google_scrapper.extract_poi(lat, lng, stop_id)
 
         # query neighbouring POIs from HERE Map
-        # here_intersect = self.here_data[self.here_data.intersects(buffer)]
+        if self.here_data and stop_id in self.here_data['stop'].tolist():
+            here_pois = self.here_data[self.here_data['stop'] == stop_id]
+        else:
+            here_pois = self.here_scrapper.extract_poi(lat, lng, stop_id)
 
         # perform conflation
-        combined_intersect = pd.concat([osm_intersect, onemap_intersect,
-                                        sla_intersect], ignore_index=True)
+        combined_pois = pd.concat([osm_pois, onemap_pois, sla_pois,
+                                   google_pois, here_pois], ignore_index=True)
+        conflated_pois = self._perform_conflation(combined_pois)
 
-        return combined_intersect
+        return conflated_pois
 
-    def _perform_conflation(self):
-        return None
+    def _perform_conflation(self, potential_duplicates):
+        return potential_duplicates
 
 
 if __name__ == '__main__':
