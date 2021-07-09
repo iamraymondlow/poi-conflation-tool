@@ -2,6 +2,8 @@ import requests
 import json
 import os
 import time
+import pandas as pd
+import geopandas as gpd
 from util import remove_duplicate, extract_date
 
 # load config file
@@ -29,28 +31,21 @@ class GoogleMapScrapper:
             Contains the unique ID of the stop.
 
         :return:
-        dict
+        nearby_pois: GeoDataframe
             Contains the surrounding POIs found near the stop formatted based on a custom schema.
         """
-        if os.path.exists(config['google_cache']):  # check if cache exist
-            with open(config['google_cache']) as json_file:
-                feature_collection = json.load(json_file)
+        # query for nearby POIs using API
+        nearby_pois = self._query_poi(lat, lng, stop_id)
 
-            # check if cache contains the POI for this stop
-            filtered_features = [item for item in feature_collection['features'] if item['stop'] == stop_id]
-
-            if len(filtered_features) > 0:  # cache contains POIs for this stop
-                return {"type": "FeatureCollection", "features": filtered_features}
-
-            else:  # cache does not contain POIs for this stop
-                filtered_features = self._query_poi(lat, lng, stop_id)
-
-                return {"type": "FeatureCollection", "features": filtered_features}
-
-        else:  # cache does not exist
-            filtered_features = self._query_poi(lat, lng, stop_id)
-
-            return {"type": "FeatureCollection", "features": filtered_features}
+        # format nearby POIs as geodataframe
+        if nearby_pois:
+            nearby_pois = pd.json_normalize(nearby_pois)
+            nearby_pois = gpd.GeoDataFrame(nearby_pois,
+                                           geometry=gpd.points_from_xy(nearby_pois['geometry.lng'],
+                                                                       nearby_pois['geometry.lat']))
+            return nearby_pois
+        else:
+            return None
 
     def _query_poi(self, lat, lng, stop_id):
         """
@@ -64,6 +59,8 @@ class GoogleMapScrapper:
             Contains the unique ID of the stop.
 
         :return:
+        formatted_result: list of dictionary
+            Contains the list of neighbouring POIs formatted based on the custom schema.
         """
         not_successful = True
         while not_successful:
