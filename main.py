@@ -138,14 +138,14 @@ class POIConflationTool:
         sla_pois = self.sla_data[self.sla_data.intersects(buffer)]
 
         # extract neighbouring POIs from GoogleMap either locally or using API
-        if self.google_data and stop_id in self.google_data['stop'].tolist():
+        if (self.google_data is not None) and (stop_id in self.google_data['stop'].tolist()):
             google_pois = self.google_data[self.google_data['stop'] == stop_id]
         else:
             google_pois = self.google_scrapper.extract_poi(lat, lng, stop_id)
             self.google_data = pd.concat([self.google_data, google_pois], ignore_index=True)
 
         # extract neighbouring POIs from HERE Map either locally or using API
-        if self.here_data and stop_id in self.here_data['stop'].tolist():
+        if (self.here_data is not None) and (stop_id in self.here_data['stop'].tolist()):
             here_pois = self.here_data[self.here_data['stop'] == stop_id]
         else:
             here_pois = self.here_scrapper.extract_poi(lat, lng, stop_id)
