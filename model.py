@@ -6,6 +6,7 @@ import numpy as np
 import geopandas as gpd
 import pyproj
 import xgboost as xgb
+import argparse
 from tqdm import tqdm
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -17,10 +18,16 @@ from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import classification_report, balanced_accuracy_score, accuracy_score, f1_score
 
-
 # load config file
 with open(os.path.join(os.path.dirname(__file__), 'config.json')) as f:
     config = json.load(f)
+
+# load parameters
+parser = argparse.ArgumentParser()
+parser.add_argument("--test_ratio", type=float, default=0.25)
+parser.add_argument("--num_bootstrap", type=int, default=4)
+parser.add_argument("--train_negative_fraction", type=float, default=0.75)
+args = parser.parse_args()
 
 
 class Model:
@@ -34,7 +41,6 @@ class Model:
         """
         # load manually labeled data
         manual_data = pd.read_csv(os.path.join(os.path.dirname(__file__), config['labeled_data']))
-        manual_data = manual_data.head(n=50)  # TODO remember to remove
         manual_data['duplicates'] = manual_data['duplicates'].apply(self._format_duplicates)
         manual_data = manual_data[['properties.address.formatted_address', 'properties.name',
                                    'lat', 'lng', 'id', 'duplicates']]
@@ -64,7 +70,7 @@ class Model:
         # for i in range(len(gb_models)):
         #     dump(gb_models[i], 'gb_model{}.joblib'.format(i+1))
 
-        return train_test_data
+        return train_test_data, train_datasets, test_data
 
     def _evaluate(self, y_true, y_pred, algorithm):
         """
@@ -98,36 +104,25 @@ class Model:
         test_data: Dataframe
             Contains a randomly sampled hold out set of the original dataset for model evaluation.
         """
-        train_datasets, test_data = None, None
+        # perform train test split
+        data = data.sample(frac=1).reset_index(drop=True)
+        train_data = data.iloc[int(len(data) * args.test_ratio):]
+        test_data = data.iloc[:int(len(data) * args.test_ratio)]
 
-        # train model based on processed labeled data
-        # Extract the positive classes and negative classes
-        # positive_data = labeled_data[labeled_data['label'] == 1].sample(frac=1).reset_index(drop=True)
-        # negative_data = labeled_data[labeled_data['label'] == 0].sample(frac=1).reset_index(drop=True)
-        #
-        # # Oversample the positive class
-        # positive_test = positive_data.iloc[:len(positive_data) // 4].reset_index(drop=True)
-        # positive_train = positive_data.iloc[len(positive_data) // 4:].reset_index(drop=True)
-        # print('Number of positive test data: {}'.format(len(positive_test)))
-        # print('Number of positive train data before oversampling: {}'.format(len(positive_train)))
-        # positive_train = pd.concat([positive_train, positive_train], ignore_index=True).sample(frac=1).reset_index(
-        #     drop=True)
-        # print('Number of positive train data after oversampling: {}'.format(len(positive_train)))
-        #
-        # # Undersampling the negative class
-        # negative_test = negative_data.iloc[:len(negative_data) // 4].reset_index(drop=True)
-        # negative_train = negative_data.iloc[len(negative_data) // 4:].reset_index(drop=True)
-        # print('Number of negative test data: {}'.format(len(negative_test)))
-        # print('Number of negative train data before undersampling: {}'.format(len(negative_train)))
-        # negative_train_list = undersample(negative_train, len(positive_train))
-        # print('Number of negative train data after undersampling: {}'.format(len(negative_train_list[0])))
-        #
-        # # Prepare test data
-        # test_data = pd.concat([positive_test, negative_test], ignore_index=True).sample(frac=1).reset_index(drop=True)
-        # X_test = test_data[['address_similarity', 'name_similarity']]
-        # y_test = test_data['label']
+        # extract positive and negative classes
+        positive_train = train_data[train_data['label'] == 1].sample(frac=1).reset_index(drop=True)
+        negative_train = train_data[train_data['label'] == 0].sample(frac=1).reset_index(drop=True)
+
+        # perform bootstrapping for the negative class and oversample the positive class
+        train_datasets = []
+        for i in range(args.num_bootstrap):
+            negative_sample = negative_train.sample(frac=args.train_negative_fraction)
+            positive_sample = positive_train.sample(n=len(negative_sample), replace=True)
+            assert len(negative_sample) == len(positive_sample)
+            bootstrap_sample = pd.concat([negative_sample, positive_sample])
+            train_datasets.append(bootstrap_sample.sample(frac=1).reset_index(drop=True))
+
         return train_datasets, test_data
-
 
     def _format_duplicates(self, duplicate_string):
         """
@@ -241,12 +236,6 @@ class Model:
 
         return labeled_data
 
-    def _undersample(self, data, num_positive_train):
-        num_segment = (len(data) // num_positive_train) + 1
-        return [
-            data.iloc[(len(data) // num_segment) * i: (len(data) // num_segment) * (i + 1), :].reset_index(drop=True)
-            for i in range(num_segment)]
-
     def _hyperparameter_tuning(self, train_data, algorithm):
         """
         Performs hyperparmeter tuning based on the training dataset.
@@ -331,4 +320,4 @@ class Model:
 
 if __name__ == '__main__':
     model = Model()
-    data = model.train_model()
+    train_test_data, train_data, test_data = model.train_model()
