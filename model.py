@@ -17,6 +17,7 @@ from shapely.ops import transform
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.model_selection import GridSearchCV
 from sklearn.metrics import classification_report, balanced_accuracy_score, accuracy_score, f1_score
+from joblib import dump
 
 # load config file
 with open(os.path.join(os.path.dirname(__file__), 'config.json')) as f:
@@ -27,6 +28,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--test_ratio", type=float, default=0.25)
 parser.add_argument("--num_bootstrap", type=int, default=4)
 parser.add_argument("--train_negative_fraction", type=float, default=0.75)
+parser.add_argument("--best_algorithm", type=str, default='GB')
 args = parser.parse_args()
 
 
@@ -56,7 +58,9 @@ class Model:
         train_datasets, test_data = self._perform_sampling(train_test_data)
 
         # train models
-        gb_models, rf_models, xgboost_models = self._train(train_datasets)
+        gb_models = self._train(train_datasets, 'GB')
+        rf_models = self._train(train_datasets, 'RF')
+        xgboost_models = self._train(train_datasets, 'XGB')
 
         # evaluate model performance on hold out set
         y_pred_gb = self._predict(gb_models, test_data[['address_similarity', 'name_similarity']])
@@ -67,10 +71,17 @@ class Model:
         self._evaluate(test_data['label'], y_pred_xgboost, 'XGBoost')
 
         # save trained models locally
-        # for i in range(len(gb_models)):
-        #     dump(gb_models[i], 'gb_model{}.joblib'.format(i+1))
-
-        return train_test_data, train_datasets, test_data
+        if args.best_algorithm == 'GB':
+            models = gb_models
+        elif args.best_algorithm == 'RF':
+            models = rf_models
+        elif args.best_algorithm == 'XGB':
+            models = xgboost_models
+        else:
+            raise ValueError('{} is not supported.'.format(args.best_algorithm))
+        for i in range(len(models)):
+            dump(models[i], os.path.join(os.path.dirname(__file__),
+                                         config['models_directory'] + 'model_{}.joblib'.format(i+1)))
 
     def _evaluate(self, y_true, y_pred, algorithm):
         """
@@ -97,6 +108,7 @@ class Model:
 
         :param data: Dataframe
             Contains the original dataset with imbalanced
+
         :return:
         train_datasets: list of Dataframe
             Contains subsets of the original dataset after bootstrapping and oversampling to
@@ -130,6 +142,7 @@ class Model:
 
         :param duplicate_string: str
             Contains the duplicated IDs in string format.
+
         :return:
         duplicates: list
             Contains the duplicated IDs in list format.
@@ -150,6 +163,7 @@ class Model:
             Contains the latitude information.
         :param radius: float
             Contains the buffer radius in metres.
+
         :return:
         buffer_latlng: Polygon
             Contains the buffer.
@@ -176,7 +190,10 @@ class Model:
             Contains the index of the centroid POI.
         :param address_matrix: np.array
             Contains the address matrix after vectorising the address corpus using TFIDF.
+
         :return:
+        np.array
+            Contains the labeled data containing the name and address similarity scores.
         """
         # identify neighbouring POIs
         buffer = self._buffer_in_meters(manual_data.loc[centroid_idx, 'lng'],
@@ -215,6 +232,7 @@ class Model:
 
         :param manual_data: GeoDataFrame
             Contains the manually labeled data and the ID information of their duplicates.
+
         :return:
         labeled_data: np.array
             Contains the labeled data ready for model training and evaluation.
@@ -244,6 +262,7 @@ class Model:
             Contains the training data.
         :param algorithm: str
             Indicates the algorithm used for model training.
+
         :return:
         grid_search: sklearn.model object
             Contains the trained model after hyperparameter tuning.
@@ -271,7 +290,7 @@ class Model:
             model = xgb.XGBClassifier()
 
         else:
-            raise ValueError('{} algorithm is not supported.'.format(algorithm))
+            raise ValueError('{} is not supported.'.format(algorithm))
 
         grid_search = GridSearchCV(model, parameters, scoring=['balanced_accuracy', 'f1_macro'],
                                    n_jobs=-1, refit='f1_macro')
@@ -279,25 +298,31 @@ class Model:
                         train_data['label'])
         return grid_search
 
-    def _train(self, train_datasets):
+    def _train(self, train_datasets, algorithm):
         """
-        Performs model training based on different subsets of the training data and different algorithms.
+        Performs model training based on different subsets of the training data.
         :param train_datasets: list of Dataframes
             Contains a list of training data after rebalancing the number of positive and
             negative classes.
-        :return:
-        gb_models, rf_models, xgboost_models: list of sklearn.models
-            Contains the trained models based on different classification algorithms.
-        """
-        gb_models = []
-        rf_models = []
-        xgboost_models = []
-        for train_data in train_datasets:
-            gb_models.append(self._hyperparameter_tuning(train_data, 'GB'))
-            rf_models.append(self._hyperparameter_tuning(train_data, 'RF'))
-            xgboost_models.append(self._hyperparameter_tuning(train_data, 'XGB'))
+        :param algorithm: str
+            Indicates the algorithm used for model training.
 
-        return gb_models, rf_models, xgboost_models
+        :return:
+        models: list of sklearn.models
+            Contains the trained models.
+        """
+        models = []
+        for train_data in train_datasets:
+            if algorithm == 'GB':
+                models.append(self._hyperparameter_tuning(train_data, 'GB'))
+            elif algorithm == 'RF':
+                models.append(self._hyperparameter_tuning(train_data, 'RF'))
+            elif algorithm == 'XGB':
+                models.append(self._hyperparameter_tuning(train_data, 'XGB'))
+            else:
+                raise ValueError('{} is not supported.'.format(algorithm))
+
+        return models
 
     def _predict(self, models, model_features):
         """
@@ -308,6 +333,7 @@ class Model:
             Contains the trained models.
         :param model_features: Dataframe
             Contain the model input features.
+
         :return:
         np.array
             Contains the most likely classification (duplicate or not) based on input features.
@@ -320,4 +346,4 @@ class Model:
 
 if __name__ == '__main__':
     model = Model()
-    train_test_data, train_data, test_data = model.train_model()
+    model.train_model()
