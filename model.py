@@ -84,7 +84,22 @@ class Model:
         print('Macro-average F1 Score: {}'.format(f1_score(y_true, y_pred, average='macro')))
         print(classification_report(y_true, y_pred, target_names=['Not Match', 'Match']))
 
-    def _perform_sampling(self):
+    def _perform_sampling(self, data):
+        """
+        Performs bootstrapping and oversampling to rebalance the positive and negative class
+        before creating subsets of the original dataset.
+
+        :param data: Dataframe
+            Contains the original dataset with imbalanced
+        :return:
+        train_datasets: list of Dataframe
+            Contains subsets of the original dataset after bootstrapping and oversampling to
+            rebalance the positive and negative classes.
+        test_data: Dataframe
+            Contains a randomly sampled hold out set of the original dataset for model evaluation.
+        """
+        train_datasets, test_data = None, None
+
         # train model based on processed labeled data
         # Extract the positive classes and negative classes
         # positive_data = labeled_data[labeled_data['label'] == 1].sample(frac=1).reset_index(drop=True)
@@ -111,7 +126,7 @@ class Model:
         # test_data = pd.concat([positive_test, negative_test], ignore_index=True).sample(frac=1).reset_index(drop=True)
         # X_test = test_data[['address_similarity', 'name_similarity']]
         # y_test = test_data['label']
-        return None
+        return train_datasets, test_data
 
 
     def _format_duplicates(self, duplicate_string):
@@ -232,21 +247,32 @@ class Model:
             data.iloc[(len(data) // num_segment) * i: (len(data) // num_segment) * (i + 1), :].reset_index(drop=True)
             for i in range(num_segment)]
 
-    def _hyperparameter_tuning(self, train_data, classifier):
-        if classifier == 'gradient_boosting':
+    def _hyperparameter_tuning(self, train_data, algorithm):
+        """
+        Performs hyperparmeter tuning based on the training dataset.
+
+        :param train_data: Dataframe
+            Contains the training data.
+        :param algorithm: str
+            Indicates the algorithm used for model training.
+        :return:
+        grid_search: sklearn.model object
+            Contains the trained model after hyperparameter tuning.
+        """
+        if algorithm == 'GB':
             parameters = {'n_estimators': np.arange(50, 210, 10),
                           'min_samples_split': np.arange(2, 6, 1),
                           'min_samples_leaf': np.arange(1, 6, 1),
                           'max_depth': np.arange(2, 6, 1)}
             model = GradientBoostingClassifier()
 
-        elif classifier == 'random_forest':
+        elif algorithm == 'RF':
             parameters = {'n_estimators': np.arange(50, 210, 10),
                           'min_samples_split': np.arange(2, 6, 1),
                           'min_samples_leaf': np.arange(1, 6, 1)}
             model = RandomForestClassifier()
 
-        elif classifier == 'xgboost':
+        elif algorithm == 'XGB':
             parameters = {'n_estimators': np.arange(50, 210, 10),
                           'learning_rate': [0.10, 0.20, 0.30],
                           'max_depth': [4, 6, 8, 10, 12, 15],
@@ -256,32 +282,50 @@ class Model:
             model = xgb.XGBClassifier()
 
         else:
-            raise ValueError('Classifier {} is not supported.'.format(classifier))
+            raise ValueError('{} algorithm is not supported.'.format(algorithm))
 
-        grid_search = GridSearchCV(model, parameters, scoring=['balanced_accuracy', 'f1_macro'], n_jobs=-1,
-                                   refit='f1_macro')
+        grid_search = GridSearchCV(model, parameters, scoring=['balanced_accuracy', 'f1_macro'],
+                                   n_jobs=-1, refit='f1_macro')
         grid_search.fit(train_data[['address_similarity', 'name_similarity']],
                         train_data['label'])
         return grid_search
 
-    def _train(self, positive_train, negative_train_list):
+    def _train(self, train_datasets):
+        """
+        Performs model training based on different subsets of the training data and different algorithms.
+        :param train_datasets: list of Dataframes
+            Contains a list of training data after rebalancing the number of positive and
+            negative classes.
+        :return:
+        gb_models, rf_models, xgboost_models: list of sklearn.models
+            Contains the trained models based on different classification algorithms.
+        """
         gb_models = []
         rf_models = []
         xgboost_models = []
-        for negative_train in negative_train_list:
-            train_data = pd.concat([positive_train, negative_train],
-                                   ignore_index=True).sample(frac=1).reset_index(drop=True)
+        for train_data in train_datasets:
+            gb_models.append(self._hyperparameter_tuning(train_data, 'GB'))
+            rf_models.append(self._hyperparameter_tuning(train_data, 'RF'))
+            xgboost_models.append(self._hyperparameter_tuning(train_data, 'XGB'))
 
-            gb_models.append(self._hyperparameter_tuning(train_data, 'gradient_boosting'))
-            rf_models.append(self._hyperparameter_tuning(train_data, 'random_forest'))
-            xgboost_models.append(self._hyperparameter_tuning(train_data, 'xgboost'))
+        return gb_models, rf_models, xgboost_models
 
-        return (gb_models, rf_models, xgboost_models)
+    def _predict(self, models, model_features):
+        """
+        Performs model prediction and combines the prediction made by all submodels by selecting
+        the more likely classification.
 
-    def _predict(self, models, X_test):
-        predict_prob = np.zeros((len(X_test), 2))
+        :param models: list of sklearn.models
+            Contains the trained models.
+        :param model_features: Dataframe
+            Contain the model input features.
+        :return:
+        np.array
+            Contains the most likely classification (duplicate or not) based on input features.
+        """
+        predict_prob = np.zeros((len(model_features), 2))
         for model in models:
-            predict_prob += model.predict_proba(X_test)
+            predict_prob += model.predict_proba(model_features)
         return np.argmax(predict_prob, axis=1)
 
 
