@@ -5,6 +5,7 @@ import re
 import numpy as np
 import geopandas as gpd
 import pyproj
+import xgboost as xgb
 from tqdm import tqdm
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -12,6 +13,9 @@ from fuzzywuzzy.fuzz import token_set_ratio
 from shapely.geometry import Point
 from functools import partial
 from shapely.ops import transform
+from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import classification_report, balanced_accuracy_score, accuracy_score, f1_score
 
 
 # load config file
@@ -40,14 +44,74 @@ class Model:
 
         # process manually labeled data
         train_test_data = self._process_manual_data(manual_data)
+        train_test_data = pd.DataFrame(train_test_data, columns=['address_similarity', 'name_similarity', 'label'])
 
-        # train model based on processed labeled data
+        # perform data sampling to balance class distribution
+        train_datasets, test_data = self._perform_sampling(train_test_data)
+
+        # train models
+        gb_models, rf_models, xgboost_models = self._train(train_datasets)
 
         # evaluate model performance on hold out set
+        y_pred_gb = self._predict(gb_models, test_data[['address_similarity', 'name_similarity']])
+        y_pred_rf = self._predict(rf_models, test_data[['address_similarity', 'name_similarity']])
+        y_pred_xgboost = self._predict(xgboost_models, test_data[['address_similarity', 'name_similarity']])
+        self._evaluate(test_data['label'], y_pred_gb, 'Gradient Boosting')
+        self._evaluate(test_data['label'], y_pred_rf, 'Random Forest')
+        self._evaluate(test_data['label'], y_pred_xgboost, 'XGBoost')
 
-        # save trained model
+        # save trained models locally
+        # for i in range(len(gb_models)):
+        #     dump(gb_models[i], 'gb_model{}.joblib'.format(i+1))
 
         return train_test_data
+
+    def _evaluate(self, y_true, y_pred, algorithm):
+        """
+        Evaluates the model performance based on overall accuracy, balanced accuracy and macro-ave
+        f1 score.
+
+        :param y_true: Series
+            Contains the ground truth labels for POI duplicates.
+        :param y_pred: np.array
+            Contains the model's inferred labels.
+        :param algorithm: str
+            Contains information about the algorithm under evaluation.
+        """
+        print(algorithm)
+        print('Overall Accuracy: {}'.format(accuracy_score(y_true, y_pred)))
+        print('Balanced Accuracy: {}'.format(balanced_accuracy_score(y_true, y_pred)))
+        print('Macro-average F1 Score: {}'.format(f1_score(y_true, y_pred, average='macro')))
+        print(classification_report(y_true, y_pred, target_names=['Not Match', 'Match']))
+
+    def _perform_sampling(self):
+        # train model based on processed labeled data
+        # Extract the positive classes and negative classes
+        # positive_data = labeled_data[labeled_data['label'] == 1].sample(frac=1).reset_index(drop=True)
+        # negative_data = labeled_data[labeled_data['label'] == 0].sample(frac=1).reset_index(drop=True)
+        #
+        # # Oversample the positive class
+        # positive_test = positive_data.iloc[:len(positive_data) // 4].reset_index(drop=True)
+        # positive_train = positive_data.iloc[len(positive_data) // 4:].reset_index(drop=True)
+        # print('Number of positive test data: {}'.format(len(positive_test)))
+        # print('Number of positive train data before oversampling: {}'.format(len(positive_train)))
+        # positive_train = pd.concat([positive_train, positive_train], ignore_index=True).sample(frac=1).reset_index(
+        #     drop=True)
+        # print('Number of positive train data after oversampling: {}'.format(len(positive_train)))
+        #
+        # # Undersampling the negative class
+        # negative_test = negative_data.iloc[:len(negative_data) // 4].reset_index(drop=True)
+        # negative_train = negative_data.iloc[len(negative_data) // 4:].reset_index(drop=True)
+        # print('Number of negative test data: {}'.format(len(negative_test)))
+        # print('Number of negative train data before undersampling: {}'.format(len(negative_train)))
+        # negative_train_list = undersample(negative_train, len(positive_train))
+        # print('Number of negative train data after undersampling: {}'.format(len(negative_train_list[0])))
+        #
+        # # Prepare test data
+        # test_data = pd.concat([positive_test, negative_test], ignore_index=True).sample(frac=1).reset_index(drop=True)
+        # X_test = test_data[['address_similarity', 'name_similarity']]
+        # y_test = test_data['label']
+        return None
 
 
     def _format_duplicates(self, duplicate_string):
@@ -127,11 +191,12 @@ class Model:
         for i in range(len(neighbour_idx)):
             if manual_data.loc[neighbour_idx[i], 'id'] in manual_data.loc[centroid_idx, 'duplicates']:
                 labels[i, 0] = 1
+            elif manual_data.loc[neighbour_idx[i], 'id'] == manual_data.loc[centroid_idx, 'id']:
+                labels[i, 0] = 1
             else:
                 pass
 
         return np.hstack((address_similarity, name_similarity, labels))
-
 
     def _process_manual_data(self, manual_data):
         """
@@ -160,6 +225,64 @@ class Model:
                 pass
 
         return labeled_data
+
+    def _undersample(self, data, num_positive_train):
+        num_segment = (len(data) // num_positive_train) + 1
+        return [
+            data.iloc[(len(data) // num_segment) * i: (len(data) // num_segment) * (i + 1), :].reset_index(drop=True)
+            for i in range(num_segment)]
+
+    def _hyperparameter_tuning(self, train_data, classifier):
+        if classifier == 'gradient_boosting':
+            parameters = {'n_estimators': np.arange(50, 210, 10),
+                          'min_samples_split': np.arange(2, 6, 1),
+                          'min_samples_leaf': np.arange(1, 6, 1),
+                          'max_depth': np.arange(2, 6, 1)}
+            model = GradientBoostingClassifier()
+
+        elif classifier == 'random_forest':
+            parameters = {'n_estimators': np.arange(50, 210, 10),
+                          'min_samples_split': np.arange(2, 6, 1),
+                          'min_samples_leaf': np.arange(1, 6, 1)}
+            model = RandomForestClassifier()
+
+        elif classifier == 'xgboost':
+            parameters = {'n_estimators': np.arange(50, 210, 10),
+                          'learning_rate': [0.10, 0.20, 0.30],
+                          'max_depth': [4, 6, 8, 10, 12, 15],
+                          'min_child_weight': [1, 3, 5, 7],
+                          'gamma': [0.0, 0.1, 0.2, 0.3, 0.4],
+                          'colsample_bytree': [0.3, 0.4, 0.5, 0.7]}
+            model = xgb.XGBClassifier()
+
+        else:
+            raise ValueError('Classifier {} is not supported.'.format(classifier))
+
+        grid_search = GridSearchCV(model, parameters, scoring=['balanced_accuracy', 'f1_macro'], n_jobs=-1,
+                                   refit='f1_macro')
+        grid_search.fit(train_data[['address_similarity', 'name_similarity']],
+                        train_data['label'])
+        return grid_search
+
+    def _train(self, positive_train, negative_train_list):
+        gb_models = []
+        rf_models = []
+        xgboost_models = []
+        for negative_train in negative_train_list:
+            train_data = pd.concat([positive_train, negative_train],
+                                   ignore_index=True).sample(frac=1).reset_index(drop=True)
+
+            gb_models.append(self._hyperparameter_tuning(train_data, 'gradient_boosting'))
+            rf_models.append(self._hyperparameter_tuning(train_data, 'random_forest'))
+            xgboost_models.append(self._hyperparameter_tuning(train_data, 'xgboost'))
+
+        return (gb_models, rf_models, xgboost_models)
+
+    def _predict(self, models, X_test):
+        predict_prob = np.zeros((len(X_test), 2))
+        for model in models:
+            predict_prob += model.predict_proba(X_test)
+        return np.argmax(predict_prob, axis=1)
 
 
 if __name__ == '__main__':
