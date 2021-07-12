@@ -4,7 +4,7 @@ import os
 import time
 import pandas as pd
 import geopandas as gpd
-from util import remove_duplicate, extract_date
+from util import remove_duplicate, extract_date, divide_bounding_box, pixelise_region
 
 # load config file
 with open(os.path.join(os.path.dirname(__file__), 'config.json')) as f:
@@ -17,6 +17,36 @@ class HereMapScrapper:
     """
     def __init__(self, radius):
         self.search_radius = radius
+
+    def extract_area(self, subzones=None):
+        """
+        Extracts all the POIs in the subzones defined.
+
+        :param subzones: list
+            Contains the list of subzones to perform POI scrapping.
+        """
+        # load country shapefile
+        subzones_shp = gpd.read_file(os.path.join(os.path.dirname(__file__), config['country_shapefile']))
+        subzones_shp = subzones_shp.to_crs(epsg="4326")
+        if subzones is not None:
+            subzones_shp = subzones_shp[subzones_shp['PLN_AREA_N'].isin(subzones)].reset_index(drop=True)
+            if len(subzones_shp) == 0:
+                raise ValueError('Subzone(s) {} is not found in the country shapefiles.'.format(subzones))
+
+        # pixelise region based on shapefile
+        coordinate_list = divide_bounding_box(max_lat=config['max_lat'], min_lat=config['min_lat'],
+                                              max_lng=config['max_lng'], min_lng=config['min_lng'],
+                                              querybox_dim=config['search_radius'])
+        coordinate_list = pixelise_region(coordinate_list, subzones_shp)
+
+        # extract POI in the region
+        i = 1
+        for coordinate in coordinate_list:
+            print('Processing query {}/{}'.format(i, len(coordinate_list)))
+            lat = (coordinate[2] + coordinate[0]) / 2
+            lng = (coordinate[1] + coordinate[3]) / 2
+            self._query_poi(lat, lng, query_area=True)
+            i += 1
 
     def extract_poi(self, lat, lng, stop_id):
         """
@@ -34,7 +64,7 @@ class HereMapScrapper:
             Contains the surrounding POIs found near the stop formatted based on a custom schema.
         """
         # query for nearby POIs using API
-        nearby_pois = self._query_poi(lat, lng, stop_id)
+        nearby_pois = self._query_poi(lat, lng, stop_id=stop_id)
 
         # format nearby POIs as geodataframe
         if nearby_pois:
@@ -46,7 +76,7 @@ class HereMapScrapper:
         else:
             return None
 
-    def _query_poi(self, lat, lng, stop_id):
+    def _query_poi(self, lat, lng, stop_id=None, query_area=False):
         """
         Performs an API query on the surrounding POIs and caches the resulting POIs.
 
@@ -56,12 +86,18 @@ class HereMapScrapper:
             Contains the longitude information of the stop.
         :param stop_id: str
             Contains the unique ID of the stop.
+        :param query_area: bool
+            Indicates if it is performing an area wide query or point query.
 
         :return:
         formatted_result: list of dictionary
             Contains the list of neighbouring POIs formatted based on the custom schema.
         """
         not_successful = True
+        if query_area:
+            cache_directory = config['here_area_cache']
+        else:
+            cache_directory = config['here_cache']
         while not_successful:
             try:
                 query_result = self._perform_query(lat=lat, lng=lng)
@@ -73,22 +109,22 @@ class HereMapScrapper:
                     if not os.path.exists(config['here_directory']):
                         os.makedirs(config['here_directory'])
 
-                    if os.path.exists(config['here_cache']):  # cache exists
-                        with open(config['here_cache']) as json_file:
+                    if os.path.exists(cache_directory):  # cache exists
+                        with open(cache_directory) as json_file:
                             feature_collection = json.load(json_file)
                             feature_collection['features'] += formatted_results
 
-                        with open(config['here_cache'], 'w') as json_file:
+                        with open(cache_directory, 'w') as json_file:
                             json.dump(feature_collection, json_file)
 
                     else:  # cache does not exist
-                        with open(config['here_cache'], 'w') as json_file:
+                        with open(cache_directory, 'w') as json_file:
                             feature_collection = {'type': 'FeatureCollection',
                                                   'features': formatted_results}
                             json.dump(feature_collection, json_file)
 
                     # Removing duplicate data
-                    remove_duplicate(config['here_cache'])
+                    remove_duplicate(cache_directory)
 
                     return formatted_results
 
@@ -195,3 +231,8 @@ class HereMapScrapper:
             poi_data.append(poi_dict)
 
         return poi_data
+
+
+if __name__ == '__main__':
+    scrapper = HereMapScrapper(config['search_radius'])
+    scrapper.extract_area(subzones=['PUNGGOL', 'QUEENSTOWN'])
