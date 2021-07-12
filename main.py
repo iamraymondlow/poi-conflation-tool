@@ -1,9 +1,10 @@
 import json
 import os
-import train_model
 import pandas as pd
 import geopandas as gpd
 import pyproj
+import glob
+import numpy as np
 from googlemap_downloader import GoogleMapScrapper
 from heremap_downloader import HereMapScrapper
 from onemap_downloader import OneMap
@@ -12,6 +13,11 @@ from sla_processor import SLA
 from shapely.geometry import Point
 from functools import partial
 from shapely.ops import transform
+from model import Model
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+from fuzzywuzzy.fuzz import token_set_ratio
+from joblib import load
 
 # load config file
 with open(os.path.join(os.path.dirname(__file__), 'config.json')) as f:
@@ -64,9 +70,13 @@ class POIConflationTool:
         self.here_scrapper = HereMapScrapper(config['search_radius'])
 
         # check if machine learning model is trained. If not, train model.
-        # if not os.listdir(os.path.exists(os.path.join(os.path.dirname(__file__), config['models_directory']))):
-        #     model.train_model()
-        self.models = None
+        model = Model()
+        if not os.listdir(os.path.exists(os.path.join(os.path.dirname(__file__), config['models_directory']))):
+            model.train_model()
+
+        model_filenames = glob.glob(os.path.join(os.path.dirname(__file__),
+                                                 config['models_directory'] + 'model_?.joblib'))
+        self.models = [load(filename) for filename in model_filenames]
 
     def _load_json_as_geopandas(self, cache_directory):
         """
@@ -124,6 +134,8 @@ class POIConflationTool:
         :param stop_id: str
             Contains the unique ID of a particular stop.
         :return:
+        conflated_pois: Geodataframe
+            Contains the conflated POIs.
         """
         # create circular buffer around POI
         buffer = self._buffer_in_meters(lng, lat, config['search_radius'])
@@ -162,10 +174,91 @@ class POIConflationTool:
                                    google_pois, here_pois], ignore_index=True)
         conflated_pois = self._perform_conflation(combined_pois)
 
+        # cache conflated POIs #TODO
+
         return conflated_pois
 
     def _perform_conflation(self, potential_duplicates):
-        return potential_duplicates
+        """
+        Performs POIs conflation by identifying the duplicates among a group of POIs.
+
+        :param potential_duplicates: Geodataframe
+            Contains the group of POIs found in a particular region. Some of which could be duplicates.
+
+        :return:
+        conflated_pois: Geodataframe
+            Contains the conflated POIs.
+        """
+        # remove POIs with no name information
+        potential_duplicates.dropna(subset=['properties.name'], inplace=True)
+        potential_duplicates = potential_duplicates[~potential_duplicates['properties.name'].isin(['None'])]
+        potential_duplicates.reset_index(drop=True, inplace=True)
+
+        # vectorise address information
+        address_corpus = potential_duplicates['properties.address.formatted_address'].fillna('Singapore').tolist()
+        address_vectorizer = TfidfVectorizer(analyzer='char_wb', ngram_range=(2, 3))
+        address_matrix = address_vectorizer.fit_transform(address_corpus)
+
+        # identify duplicates using ML models
+        duplicate_idx = []
+        for i in range(len(potential_duplicates)):
+            duplicate_idx.append(self._identify_duplicates(potential_duplicates, i, address_matrix))
+
+        assert len(potential_duplicates) == len(duplicate_idx)
+        potential_duplicates['duplicates'] = duplicate_idx
+
+        # conflate duplicated POIs
+        conflated_pois = None
+
+        return conflated_pois
+
+    def _identify_duplicates(self, data, centroid_idx, address_matrix):
+        """
+        Identifies duplicated POI points to a centroid POI by passing the name similarity and address
+        similarity values into machine learning models for classification.
+
+        :param data: Geodataframe
+            Contains information about the neighbouring POIs and the centroid POI.
+        :param centroid_idx: int
+            Contains the index of the centroid POI in data.
+        :param address_matrix: np.array
+            Contains the TFIDF-vectorised address matrix.
+
+        :return:
+        duplicated_id: list
+            Contains a list of IDs for the duplicated POIs
+        """
+        if len(data) > 1:  # presence of neighbouring POIs
+            data.reset_index(drop=True, inplace=True)
+            neighbour_idx = list(data.index)
+            neighbour_idx.remove(centroid_idx)
+            neighbour_data = data.iloc[neighbour_idx]
+            print(centroid_idx)
+            print(neighbour_idx)
+            print(data.index)
+
+            address_similarity = cosine_similarity(address_matrix[neighbour_idx, :],
+                                                   address_matrix[centroid_idx, :]).reshape(-1, 1)
+
+            name_similarity = np.array([token_set_ratio(data.loc[centroid_idx, 'properties.name'], neighbour_name)
+                                        for neighbour_name
+                                        in neighbour_data['properties.name'].tolist()]).reshape(-1, 1)
+
+            # Pass name and address similarity values into ML models
+            predict_prob = np.zeros((len(neighbour_idx), 2))
+            for model in self.models:
+                predict_prob += model.predict_proba(np.hstack((address_similarity, name_similarity)))
+            temp_idx = list(np.where(np.argmax(predict_prob, axis=1) == 1)[0])
+            print(predict_prob)
+            print(temp_idx)
+            # POIs are only considered as duplicates if they come from different sources
+            duplicate_id = [data.loc[neighbour_idx[idx], 'id'] for idx in temp_idx
+                            if data.loc[neighbour_idx[idx], 'properties.source'] !=
+                            data.loc[centroid_idx, 'properties.source']]
+
+            return duplicate_id
+        else:  # no neighbours
+            return []
 
 
 if __name__ == '__main__':
