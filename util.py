@@ -2,6 +2,7 @@ import numpy as np
 import hashlib
 import json
 from datetime import datetime
+from shapely.geometry import Point
 
 
 def translate_coordinate(lat, lng, l, h):
@@ -121,6 +122,18 @@ def divide_bounding_box(max_lat, min_lat, max_lng, min_lng, querybox_dim):
     return lat_lng_list
 
 
+def pixelise_region(coordinates, shapefile):
+    """
+    This function filters out a list of coordinates based on whether it intersects with the regions stored within
+    the shapefile.
+    """
+    return [coordinate for coordinate in coordinates if
+            (np.sum(shapefile['geometry'].apply(lambda x: Point(coordinate[1], coordinate[0]).within(x))) != 0) |
+            (np.sum(shapefile['geometry'].apply(lambda x: Point(coordinate[3], coordinate[0]).within(x))) != 0) |
+            (np.sum(shapefile['geometry'].apply(lambda x: Point(coordinate[1], coordinate[2]).within(x))) != 0) |
+            (np.sum(shapefile['geometry'].apply(lambda x: Point(coordinate[3], coordinate[2]).within(x))) != 0)]
+
+
 def generate_id(poi_dict):
     """
     Generates an unique ID based on the encoded string of the POI's name, address and location information.
@@ -152,26 +165,6 @@ def extract_date():
     Extract the date when the query is made in the format YYYYMMDD.
     """
     return datetime.today().strftime('%Y%m%d')
-
-
-# def segment_address(address):
-#     """
-#     Parse the address string using the libpostal library and segment it into the various components.
-#     """
-#     address_dict = {}
-#     address_list = parse_address(address)
-#     for value, key in address_list:
-#         capitalised_value = ''
-#         for item in value.split():
-#             capitalised_value += item.capitalize() + ' '
-#         address_dict[key] = capitalised_value[:-1]
-#
-#     formatted_address = ''
-#     for key, value in address_dict.items():
-#         formatted_address += value + ' '
-#     address_dict['formatted_address'] = formatted_address[:-1]
-#
-#     return address_dict
 
 
 def remove_duplicate(filename):
