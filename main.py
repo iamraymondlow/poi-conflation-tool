@@ -466,14 +466,9 @@ class POIConflationTool:
 
 if __name__ == '__main__':
     tool = POIConflationTool()
-    osm_data = tool.osm_data
-    onemap_data = tool.onemap_data
-    sla_data = tool.sla_data
-    google_data = tool.google_data
-    heremap_data = tool.here_data
-    # models = tool.models
     # data = tool.extract_poi(1.3414, 103.9633, 'test')
 
+    ## extracting POIs on the fly
     # data = pd.read_excel('data/hvp_data/combined_stop_data.xlsx')
     # for i in range(len(data)):
     #     print('Processing {}/{}'.format(i+1, len(data)))
@@ -481,6 +476,7 @@ if __name__ == '__main__':
     #                      data.loc[i, 'StopLon'],
     #                      str(data.loc[i, 'StopID']))
 
+    ## extracting POIs based on study area
     # shapefile_df = gpd.read_file('data/master-plan-2014-planning-area-boundary-web/master-plan-2014-planning-area-boundary-web-shp/MP14_PLNG_AREA_WEB_PL.shp')
     # shapefile_df = shapefile_df.to_crs(epsg="4326")
     # shapefile_df = shapefile_df[shapefile_df['PLN_AREA_N'] == 'QUEENSTOWN'].reset_index(drop=True)
