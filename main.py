@@ -81,7 +81,7 @@ class POIConflationTool:
 
         # check if machine learning model is trained. If not, train model.
         model = Model()
-        if not os.listdir(os.path.exists(os.path.join(os.path.dirname(__file__), config['models_directory']))):
+        if not os.listdir(os.path.join(os.path.dirname(__file__), config['models_directory'])):
             model.train_model()
         model_filenames = glob.glob(os.path.join(os.path.dirname(__file__),
                                                  config['models_directory'] + 'model_?.joblib'))
@@ -481,4 +481,14 @@ if __name__ == '__main__':
     #                      data.loc[i, 'StopLon'],
     #                      str(data.loc[i, 'StopID']))
 
-
+    # shapefile_df = gpd.read_file('data/master-plan-2014-planning-area-boundary-web/master-plan-2014-planning-area-boundary-web-shp/MP14_PLNG_AREA_WEB_PL.shp')
+    # shapefile_df = shapefile_df.to_crs(epsg="4326")
+    # shapefile_df = shapefile_df[shapefile_df['PLN_AREA_N'] == 'QUEENSTOWN'].reset_index(drop=True)
+    #
+    # filtered_osm_pois = osm_data[osm_data.intersects(shapefile_df.loc[0, 'geometry'])].reset_index(drop=True)
+    # filtered_one_pois = onemap_data[onemap_data.intersects(shapefile_df.loc[0, 'geometry'])].reset_index(drop=True)
+    # filtered_sla_pois = sla_data[sla_data.intersects(shapefile_df.loc[0, 'geometry'])].reset_index(drop=True)
+    #
+    # filtered_osm_pois.to_file("osm_queenstown.shp")
+    # filtered_one_pois.to_file("onemap_queenstown.shp")
+    # filtered_sla_pois.to_file("sla_queenstown.shp")
