@@ -35,6 +35,15 @@ class POIConflationTool:
         not formatted, the appropriate functions will be triggered to begin formatting the dataset.
         Also checks if machine learning model for identifying POI duplicates are trained.
         """
+        # load locally cached POIs that was conflated in the past
+        print('Loading conflated data from local directory...')
+        if not os.path.exists(os.path.join(os.path.dirname(__file__), config['conflated_cache'])):
+            if not os.path.exists(config['conflated_directory']):
+                os.makedirs(config['conflated_directory'])
+            self.conflated_data = None
+        else:
+            self.conflated_data = gpd.read_file(os.path.join(os.path.dirname(__file__), config['conflated_cache']))
+
         # load formatted OneMap data. If it does not exist, format and load data.
         print('Loading OneMap data from local directory...')
         if not os.path.exists(os.path.join(os.path.dirname(__file__), config['onemap_cache'])):
@@ -174,7 +183,9 @@ class POIConflationTool:
                                    google_pois, here_pois], ignore_index=True)
         conflated_pois = self._perform_conflation(combined_pois)
 
-        # cache conflated POIs #TODO
+        # cache conflated POIs
+        self.conflated_data = pd.concat([self.conflated_data, conflated_pois], ignore_index=True)
+        self.conflated_data.to_file(os.path.join(os.path.dirname(__file__), config['conflated_cache']))
 
         return conflated_pois
 
