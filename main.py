@@ -18,6 +18,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from fuzzywuzzy.fuzz import token_set_ratio
 from joblib import load
+from shapely import geometry
 
 # load config file
 with open(os.path.join(os.path.dirname(__file__), 'config.json')) as f:
@@ -82,7 +83,6 @@ class POIConflationTool:
         model = Model()
         if not os.listdir(os.path.exists(os.path.join(os.path.dirname(__file__), config['models_directory']))):
             model.train_model()
-
         model_filenames = glob.glob(os.path.join(os.path.dirname(__file__),
                                                  config['models_directory'] + 'model_?.joblib'))
         self.models = [load(filename) for filename in model_filenames]
@@ -219,7 +219,7 @@ class POIConflationTool:
         potential_duplicates['duplicates'] = duplicate_idx
 
         # conflate duplicated POIs
-        conflated_pois = None
+        conflated_pois = self._conflate(potential_duplicates)
 
         return conflated_pois
 
@@ -271,6 +271,198 @@ class POIConflationTool:
         else:  # no neighbours
             return []
 
+    def _conflate(self, data):
+        """
+        Performs conflation on the duplicated POIs.
+
+        :param data: Geodataframe
+            Contains the duplicated POIs.
+
+        :return:
+        conflated_pois: Geodataframe
+            Contains the conflated POIs.
+        """
+        conflated_pois = gpd.GeoDataFrame()
+        processed_id = []
+
+        for i in range(len(data)):
+            if data.loc[i, 'id'] in processed_id:  # ignore POIs that has been merged
+                continue
+
+            if data.loc[i, 'duplicates']:
+                duplicate_ids, duplicates = self._find_all_duplicates(data.loc[i, 'duplicates'], data)
+                conflated_pois = pd.concat([conflated_pois, self._merge_duplicates(duplicates)], ignore_index=True)
+                processed_id += duplicate_ids
+            else:
+                conflated_pois = pd.concat([conflated_pois, data], ignore_index=True)
+                processed_id.append(data.loc[i, 'id'])
+
+        return conflated_pois
+
+    def _find_all_duplicates(self, duplicate_ids, data):
+        """
+        Searches for all identified duplicates and return their IDs and attribute information.
+
+        :param duplicate_ids: list
+            Contains a list of IDs that are identified to be duplicates.
+        :param data: Geodataframe
+            Contains the list of neighbouring POIs.
+
+        :return:
+        duplicate_ids: list
+            Contains the full list of IDs that are identified as duplicates
+        data[data['id'].isin(duplicate_ids)]: Geodataframe:
+            Contains the POIs that are identified as duplicates.
+        """
+        all_duplicates_not_found = True
+        while all_duplicates_not_found:
+            temp_data = data[data['id'].isin(duplicate_ids)].reset_index(drop=True)
+            id_list = list(set([item
+                                for sublist in temp_data['duplicates'].tolist()
+                                for item in sublist] + duplicate_ids))
+
+            if sorted(id_list) == sorted(duplicate_ids):
+                all_duplicates_not_found = False
+
+            duplicate_ids = id_list
+
+        return duplicate_ids, data[data['id'].isin(duplicate_ids)]
+
+    def _extract_trusted_source_idx(self, data):
+        """
+        Extract the indices of the POIs that come from the most trusted source.
+        OneMap > SLA > GoogleMap > HereMap > OpenstreetMap
+
+        :param data: Geodataframe
+            Contain all of the neighbouring POIs in the area.
+
+        :return: list
+            Contains the list of indices belonging to POIs from the most trusted source.
+        """
+        source_list = data['properties.source'].tolist()
+
+        if 'OneMap' in source_list:
+            return list(data[data['properties.source'] == 'OneMap'].index)
+        elif 'SLA' in source_list:
+            return list(data[data['properties.source'] == 'SLA'].index)
+        elif 'GoogleMap' in source_list:
+            return list(data[data['properties.source'] == 'GoogleMap'].index)
+        elif 'HereMap' in source_list:
+            return list(data[data['properties.source'] == 'HereMap'].index)
+        elif 'OpenStreetMap' in source_list:
+            return list(data[data['properties.source'] == 'OpenStreetMap'].index)
+        else:
+            raise ValueError('{} does not fall into any one of the POI sources.'.format(data['properties.source']))
+
+    def _merge_duplicates(self, duplicates):
+        """
+        Merges the attributes of all duplicated POIs identified to form a new POI.
+
+        :param duplicates: Geodataframe
+            Contains the full list of duplicated POIs.
+
+        :return:
+        merged_poi: geodataframe
+            Contains the merged POI.
+        """
+        duplicates.reset_index(drop=True, inplace=True)
+        trusted_idx = self._extract_trusted_source_idx(duplicates)
+        merged_poi = gpd.GeoDataFrame()
+        columns_processed = []
+
+        for column in duplicates.columns:
+            if column in columns_processed:
+                continue
+
+            # feature type
+            if column == 'type':
+                merged_poi[column] = 'Feature'
+                columns_processed.append(column)
+
+            # geometry coordinates
+            elif 'geometry' in column:
+                centroid = geometry.Polygon([[p.x, p.y] for p in duplicates['geometry'].tolist()]).centroid
+                merged_poi['geometry.lat'] = centroid.y
+                merged_poi['geometry.lng'] = centroid.x
+                merged_poi.geometry = gpd.points_from_xy(centroid.x, centroid.y)
+                columns_processed += ['geometry', 'geometry.lat', 'geometry.lng']
+
+            # address
+            elif column == 'properties.address':
+                merged_poi['properties.address'] = max(duplicates.loc[trusted_idx,
+                                                                      'properties.address.formatted_address'].tolist(),
+                                                       key=len)
+                columns_processed.append(column)
+
+            # name
+            elif column == 'properties.name':
+                merged_poi['properties.name'] = max(duplicates.loc[trusted_idx, 'properties.address.name'].tolist(),
+                                                    key=len)
+                columns_processed.append(column)
+
+            # place type
+            elif column == 'properties.place_type':  # store all place types in a list
+                temp_list = list(set('; '.join(duplicates[column].tolist()).split('; ')))
+                merged_poi[column] = '; '.join(temp_list)
+                columns_processed.append(column)
+
+            # tags
+            elif 'properties.tags' in column:
+                tags = list(set([item for item in duplicates[column].tolist() if not pd.isnull(item)]))
+                if len(tags) > 0:
+                    merged_poi[column] = '; '.join(tags)
+                columns_processed.append(column)
+
+            # source
+            elif column == 'properties.source':  # store all sources in a list
+                source_list = list(set(duplicates[column].tolist()))
+                merged_poi[column] = '; '.join(source_list)
+                columns_processed.append(column)
+
+            # requires_verification
+            elif 'properties.requires_verification' in column:
+                if 'Yes' in duplicates['properties.requires_verification.summary'].tolist():
+                    merged_poi['properties.requires_verification.summary'] = 'Yes'
+                    merged_poi['properties.requires_verification.reasons'] = '; '.join(list(set(
+                        [reason for reason in duplicates['properties.requires_verification.reasons'].tolist()
+                         if not pd.isnull(reason)])))
+                else:
+                    merged_poi['properties.requires_verification.summary'] = 'No'
+                columns_processed += ['properties.requires_verification.summary',
+                                      'properties.requires_verification.reasons']
+
+            # id information
+            elif column == 'id':  # store all ids in a list
+                merged_poi[column] = '; '.join(duplicates[column].tolist())
+                columns_processed.append(column)
+
+            # stop ids
+            elif column == 'stop':
+                stop_ids = list(set([item for item in duplicates[column].tolist() if not pd.isnull(item)]))
+                if len(stop_ids) > 0:
+                    merged_poi[column] = '; '.join(tags)
+                columns_processed.append(column)
+
+            # extraction date information
+            elif column == 'extraction_date':  # the latest date will be chosen
+                extraction_dates = [int(date) for date in duplicates[column].tolist() if not pd.isnull(date)]
+
+                if extraction_dates:
+                    merged_poi[column] = str(max(extraction_dates))
+                else:
+                    raise ValueError('Extraction date information is missing.')
+                columns_processed.append(column)
+
+            elif column == 'duplicates':  # ignore duplicate field
+                columns_processed.append(column)
+                continue
+
+            else:
+                raise ValueError('{} is not considered!'.format(column))
+
+        assert set(duplicates.columns).issubset(set(columns_processed))
+        return merged_poi
+
 
 if __name__ == '__main__':
     tool = POIConflationTool()
@@ -279,7 +471,7 @@ if __name__ == '__main__':
     sla_data = tool.sla_data
     google_data = tool.google_data
     heremap_data = tool.here_data
-    models = tool.models
+    # models = tool.models
     # data = tool.extract_poi(1.3414, 103.9633, 'test')
 
     # data = pd.read_excel('data/hvp_data/combined_stop_data.xlsx')
