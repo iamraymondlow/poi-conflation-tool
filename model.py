@@ -174,17 +174,25 @@ class Model:
         buffer_latlng: Polygon
             Contains the buffer.
         """
-        proj_meters = pyproj.Proj(init='epsg:3414')  # EPSG for Singapore
-        proj_latlng = pyproj.Proj(init='epsg:4326')
+        proj_meters = pyproj.CRS('EPSG:3414')  # EPSG for Singapore
+        proj_latlng = pyproj.CRS('EPSG:4326')
 
-        project_to_meters = partial(pyproj.transform, proj_latlng, proj_meters)
-        project_to_latlng = partial(pyproj.transform, proj_meters, proj_latlng)
-
-        pt_meters = transform(project_to_meters, Point(lng, lat))
-
+        project_to_metres = pyproj.Transformer.from_crs(proj_latlng, proj_meters, always_xy=True).transform
+        project_to_latlng = pyproj.Transformer.from_crs(proj_meters, proj_latlng, always_xy=True).transform
+        pt_meters = transform(project_to_metres, Point(lng, lat))
         buffer_meters = pt_meters.buffer(radius)
         buffer_latlng = transform(project_to_latlng, buffer_meters)
         return buffer_latlng
+
+        # project_to_meters = partial(pyproj.transform, proj_latlng, proj_meters)
+        # project_to_latlng = partial(pyproj.transform, proj_meters, proj_latlng)
+        #
+        # pt_meters = transform(project_to_meters, Point(lng, lat))
+        #
+        # buffer_meters = pt_meters.buffer(radius)
+        # buffer_latlng = transform(project_to_latlng, buffer_meters)
+        # print(buffer_latlng)
+        # return buffer_latlng
 
     def _label_data(self, manual_data, centroid_idx, address_matrix):
         """
