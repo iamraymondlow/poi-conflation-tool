@@ -184,16 +184,6 @@ class Model:
         buffer_latlng = transform(project_to_latlng, buffer_meters)
         return buffer_latlng
 
-        # project_to_meters = partial(pyproj.transform, proj_latlng, proj_meters)
-        # project_to_latlng = partial(pyproj.transform, proj_meters, proj_latlng)
-        #
-        # pt_meters = transform(project_to_meters, Point(lng, lat))
-        #
-        # buffer_meters = pt_meters.buffer(radius)
-        # buffer_latlng = transform(project_to_latlng, buffer_meters)
-        # print(buffer_latlng)
-        # return buffer_latlng
-
     def _label_data(self, manual_data, centroid_idx, address_matrix):
         """
         Generates the labeled data for the neighbouring POIs around a centroid POI.
