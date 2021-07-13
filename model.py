@@ -42,6 +42,7 @@ class Model:
         sources.
         """
         # load manually labeled data
+        print('Loading manually labeled data for model training...')
         manual_data = pd.read_csv(os.path.join(os.path.dirname(__file__), config['labeled_data']))
         manual_data['duplicates'] = manual_data['duplicates'].apply(self._format_duplicates)
         manual_data = manual_data[['properties.address.formatted_address', 'properties.name',
@@ -51,18 +52,22 @@ class Model:
                                                                    manual_data['lat']))
 
         # process manually labeled data
+        print('Processing manually labeled data for model training...')
         train_test_data = self._process_manual_data(manual_data)
         train_test_data = pd.DataFrame(train_test_data, columns=['address_similarity', 'name_similarity', 'label'])
 
         # perform data sampling to balance class distribution
+        print('Performing data sampling to balance class distribution...')
         train_datasets, test_data = self._perform_sampling(train_test_data)
 
         # train models
+        print('Begin model training...')
         gb_models = self._train(train_datasets, 'GB')
         rf_models = self._train(train_datasets, 'RF')
         xgboost_models = self._train(train_datasets, 'XGB')
 
         # evaluate model performance on hold out set
+        print('Perform model evaluation...')
         y_pred_gb = self._predict(gb_models, test_data[['address_similarity', 'name_similarity']])
         y_pred_rf = self._predict(rf_models, test_data[['address_similarity', 'name_similarity']])
         y_pred_xgboost = self._predict(xgboost_models, test_data[['address_similarity', 'name_similarity']])
@@ -71,6 +76,7 @@ class Model:
         self._evaluate(test_data['label'], y_pred_xgboost, 'XGBoost')
 
         # save trained models locally
+        print('Saving trained models locally...')
         if args.best_algorithm == 'GB':
             models = gb_models
         elif args.best_algorithm == 'RF':
