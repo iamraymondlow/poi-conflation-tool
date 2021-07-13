@@ -214,8 +214,7 @@ class POIConflationTool:
                 self.conflated_data = conflated_pois
             else:
                 self.conflated_data = pd.concat([self.conflated_data, conflated_pois], ignore_index=True)
-            self.conflated_data.to_file(os.path.join(os.path.dirname(__file__), config['conflated_cache']))
-
+            self.conflated_data.to_file(os.path.join(os.path.dirname(__file__), config['conflated_area_cache']))
 
     def extract_poi(self, lat, lng, stop_id=None):
         """
@@ -551,28 +550,16 @@ class POIConflationTool:
 
 
 if __name__ == '__main__':
+    ## extracting POIs based on subzones
     tool = POIConflationTool(subzones=['PUNGGOL'])
     tool.here_data.to_file("here_punggol.shp")
     tool.google_data.to_file("google_punggol.shp")
-    # data = tool.extract_poi(1.3414, 103.9633, 'test')
 
     ## extracting POIs on the fly
+    # tool = POIConflationTool()
     # data = pd.read_excel('data/hvp_data/combined_stop_data.xlsx')
     # for i in range(len(data)):
     #     print('Processing {}/{}'.format(i+1, len(data)))
     #     tool.extract_poi(data.loc[i, 'StopLat'],
     #                      data.loc[i, 'StopLon'],
     #                      str(data.loc[i, 'StopID']))
-
-    ## extracting POIs based on study area
-    # shapefile_df = gpd.read_file('data/master-plan-2014-planning-area-boundary-web/master-plan-2014-planning-area-boundary-web-shp/MP14_PLNG_AREA_WEB_PL.shp')
-    # shapefile_df = shapefile_df.to_crs(epsg="4326")
-    # shapefile_df = shapefile_df[shapefile_df['PLN_AREA_N'] == 'QUEENSTOWN'].reset_index(drop=True)
-    #
-    # filtered_osm_pois = osm_data[osm_data.intersects(shapefile_df.loc[0, 'geometry'])].reset_index(drop=True)
-    # filtered_one_pois = onemap_data[onemap_data.intersects(shapefile_df.loc[0, 'geometry'])].reset_index(drop=True)
-    # filtered_sla_pois = sla_data[sla_data.intersects(shapefile_df.loc[0, 'geometry'])].reset_index(drop=True)
-    #
-    # filtered_osm_pois.to_file("osm_queenstown.shp")
-    # filtered_one_pois.to_file("onemap_queenstown.shp")
-    # filtered_sla_pois.to_file("sla_queenstown.shp")
