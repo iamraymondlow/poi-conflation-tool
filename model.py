@@ -316,7 +316,10 @@ class Model:
             Contains the trained models.
         """
         models = []
+        i = 1
         for train_data in train_datasets:
+            print('Training {} model {}/{}...'.format(algorithm, i, len(train_datasets)))
+            i += 1
             if algorithm == 'GB':
                 models.append(self._hyperparameter_tuning(train_data, 'GB'))
             elif algorithm == 'RF':
