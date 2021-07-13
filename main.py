@@ -62,7 +62,7 @@ class POIConflationTool:
             OneMap().format_data()
         onemap_data = self._load_json_as_geopandas(config['onemap_cache'])
         if subzones is not None:
-            self.onemap_data = onemap_data[onemap_data.intersects(country_shp['geometry'])].reset_index(drop=True)
+            self.onemap_data = onemap_data[onemap_data.intersects(country_shp.loc[0, 'geometry'])].reset_index(drop=True)
         else:
             self.onemap_data = onemap_data
 
@@ -72,7 +72,7 @@ class POIConflationTool:
             SLA().format_data()
         sla_data = self._load_json_as_geopandas(config['sla_cache'])
         if subzones is not None:
-            self.sla_data = sla_data[sla_data.intersects(country_shp['geometry'])].reset_index(drop=True)
+            self.sla_data = sla_data[sla_data.intersects(country_shp.loc[0, 'geometry'])].reset_index(drop=True)
         else:
             self.sla_data = sla_data
 
@@ -82,7 +82,7 @@ class POIConflationTool:
             OSM().format_data()
         osm_data = self._load_json_as_geopandas(config['osm_cache'])
         if subzones is not None:
-            self.osm_data = osm_data[osm_data.intersects(country_shp['geometry'])].reset_index(drop=True)
+            self.osm_data = osm_data[osm_data.intersects(country_shp.loc[0, 'geometry'])].reset_index(drop=True)
         else:
             self.osm_data = osm_data
 
@@ -551,7 +551,9 @@ class POIConflationTool:
 
 
 if __name__ == '__main__':
-    tool = POIConflationTool()
+    tool = POIConflationTool(subzones=['PUNGGOL'])
+    tool.here_data.to_file("here_punggol.shp")
+    tool.google_data.to_file("google_punggol.shp")
     # data = tool.extract_poi(1.3414, 103.9633, 'test')
 
     ## extracting POIs on the fly

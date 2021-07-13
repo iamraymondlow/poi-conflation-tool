@@ -135,10 +135,6 @@ class HereMapScrapper:
                 print('Connection Error. Pausing query for {} minutes...'.format(config['wait_time']))
                 time.sleep(config['wait_time'] * 60)
 
-            except ValueError:
-                print('Pausing query for {} minutes...'.format(config['wait_time']))
-                time.sleep(config['wait_time'] * 60)
-
     def _perform_query(self, lat, lng):
         """
         Extracts all POIs within a bounding circle using HERE Map API.
