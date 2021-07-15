@@ -11,15 +11,15 @@ from onemap_downloader import OneMap
 from osm_processor import OSM
 from sla_processor import SLA
 from shapely.geometry import Point
-from functools import partial
 from shapely.ops import transform
 from model import Model
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from fuzzywuzzy.fuzz import token_set_ratio
+from fuzzywuzzy.fuzz import token_set_ratio, ratio
 from joblib import load
 from shapely import geometry
 from util import divide_bounding_box, pixelise_region
+from copy import deepcopy
 
 # load config file
 with open(os.path.join(os.path.dirname(__file__), 'config.json')) as f:
@@ -38,8 +38,9 @@ class POIConflationTool:
         Also checks if machine learning model for identifying POI duplicates are trained.
         """
         # load country shapefiles for filtering out POIs based on subzones
-        country_shp = gpd.read_file(os.path.join(os.path.dirname(__file__), config['country_shapefile']))
-        country_shp = country_shp.to_crs(epsg="4326")
+        country_shp = gpd.read_file(os.path.join(os.path.dirname(__file__), config['country_shapefile']),
+                                    encoding='utf-8')
+        country_shp = country_shp.to_crs("EPSG:4326")
         if subzones is not None:
             country_shp = country_shp[country_shp['PLN_AREA_N'].isin(subzones)].reset_index(drop=True)
         self.country_shp = country_shp
@@ -52,7 +53,8 @@ class POIConflationTool:
                     os.makedirs(config['conflated_directory'])
                 self.conflated_data = None
             else:
-                self.conflated_data = gpd.read_file(os.path.join(os.path.dirname(__file__), config['conflated_cache']))
+                self.conflated_data = gpd.read_file(os.path.join(os.path.dirname(__file__), config['conflated_cache']),
+                                                    encoding='utf-8')
         else:
             self.conflated_data = None
 
@@ -62,7 +64,8 @@ class POIConflationTool:
             OneMap().format_data()
         onemap_data = self._load_json_as_geopandas(config['onemap_cache'])
         if subzones is not None:
-            self.onemap_data = onemap_data[onemap_data.intersects(country_shp.loc[0, 'geometry'])].reset_index(drop=True)
+            self.onemap_data = onemap_data[onemap_data.intersects(country_shp.loc[0,
+                                                                                  'geometry'])].reset_index(drop=True)
         else:
             self.onemap_data = onemap_data
 
@@ -95,10 +98,11 @@ class POIConflationTool:
             else:
                 self.google_data = None
         else:
-            if os.path.exists(os.path.join(os.path.dirname(__file__), config['google_area_cache'])):
-                self.google_data = self._load_json_as_geopandas(config['google_area_cache'])
-            else:
+            if not os.path.exists(os.path.join(os.path.dirname(__file__), config['google_area_cache'])):
                 self.google_data = self.google_scrapper.extract_area(subzones=subzones)
+            google_data = self._load_json_as_geopandas(config['google_area_cache'])
+            self.google_data = google_data[google_data.intersects(country_shp.loc[0,
+                                                                                  'geometry'])].reset_index(drop=True)
 
         # load formatted HERE Map data. If it does not exist, save as None.
         print('Loading HERE Map data from local directory...')
@@ -109,10 +113,10 @@ class POIConflationTool:
             else:
                 self.here_data = None
         else:
-            if os.path.exists(os.path.join(os.path.dirname(__file__), config['here_area_cache'])):
-                self.here_data = self._load_json_as_geopandas(config['here_area_cache'])
-            else:
+            if not os.path.exists(os.path.join(os.path.dirname(__file__), config['here_area_cache'])):
                 self.here_data = self.here_scrapper.extract_area(subzones=subzones)
+            here_data = self._load_json_as_geopandas(config['here_area_cache'])
+            self.here_data = here_data[here_data.intersects(country_shp.loc[0, 'geometry'])].reset_index(drop=True)
 
         # check if machine learning model is trained. If not, train model.
         model = Model()
@@ -154,14 +158,12 @@ class POIConflationTool:
         buffer_latlng: Polygon
             Contains the buffer.
         """
-        proj_meters = pyproj.Proj(init='epsg:3414')  # EPSG for Singapore
-        proj_latlng = pyproj.Proj(init='epsg:4326')
+        proj_meters = pyproj.CRS('EPSG:3414')  # EPSG for Singapore
+        proj_latlng = pyproj.CRS('EPSG:4326')
 
-        project_to_meters = partial(pyproj.transform, proj_latlng, proj_meters)
-        project_to_latlng = partial(pyproj.transform, proj_meters, proj_latlng)
-
-        pt_meters = transform(project_to_meters, Point(lng, lat))
-
+        project_to_metres = pyproj.Transformer.from_crs(proj_latlng, proj_meters, always_xy=True).transform
+        project_to_latlng = pyproj.Transformer.from_crs(proj_meters, proj_latlng, always_xy=True).transform
+        pt_meters = transform(project_to_metres, Point(lng, lat))
         buffer_meters = pt_meters.buffer(radius)
         buffer_latlng = transform(project_to_latlng, buffer_meters)
         return buffer_latlng
@@ -214,7 +216,12 @@ class POIConflationTool:
                 self.conflated_data = conflated_pois
             else:
                 self.conflated_data = pd.concat([self.conflated_data, conflated_pois], ignore_index=True)
-            self.conflated_data.to_file(os.path.join(os.path.dirname(__file__), config['conflated_area_cache']))
+
+            if self.conflated_data is not None:
+                if 'duplicates' in self.conflated_data.columns:
+                    self.conflated_data.drop(columns=['duplicates'], inplace=True)
+                self.conflated_data.to_file(os.path.join(os.path.dirname(__file__), config['conflated_area_cache']),
+                                            encoding='utf-8')
 
     def extract_poi(self, lat, lng, stop_id=None):
         """
@@ -270,7 +277,10 @@ class POIConflationTool:
 
         # cache conflated POIs
         self.conflated_data = pd.concat([self.conflated_data, conflated_pois], ignore_index=True)
-        self.conflated_data.to_file(os.path.join(os.path.dirname(__file__), config['conflated_cache']))
+        if 'duplicates' in self.conflated_data.columns:
+            self.conflated_data.drop(columns=['duplicates'], inplace=True)
+        self.conflated_data.to_file(os.path.join(os.path.dirname(__file__), config['conflated_cache']),
+                                    encoding='utf-8')
 
         return conflated_pois
 
@@ -291,22 +301,25 @@ class POIConflationTool:
         potential_duplicates.reset_index(drop=True, inplace=True)
 
         # vectorise address information
-        address_corpus = potential_duplicates['properties.address.formatted_address'].fillna('Singapore').tolist()
-        address_vectorizer = TfidfVectorizer(analyzer='char_wb', ngram_range=(2, 3))
-        address_matrix = address_vectorizer.fit_transform(address_corpus)
+        if len(potential_duplicates) > 1:
+            address_corpus = potential_duplicates['properties.address'].fillna('Singapore').tolist()
+            address_vectorizer = TfidfVectorizer(analyzer='char_wb', ngram_range=(2, 3))
+            address_matrix = address_vectorizer.fit_transform(address_corpus)
 
-        # identify duplicates using ML models
-        duplicate_idx = []
-        for i in range(len(potential_duplicates)):
-            duplicate_idx.append(self._identify_duplicates(potential_duplicates, i, address_matrix))
+            # identify duplicates using ML models
+            duplicate_idx = []
+            for i in range(len(potential_duplicates)):
+                duplicate_idx.append(self._identify_duplicates(potential_duplicates, i, address_matrix))
 
-        assert len(potential_duplicates) == len(duplicate_idx)
-        potential_duplicates['duplicates'] = duplicate_idx
+            assert len(potential_duplicates) == len(duplicate_idx)
+            potential_duplicates['duplicates'] = duplicate_idx
 
-        # conflate duplicated POIs
-        conflated_pois = self._conflate(potential_duplicates)
+            # conflate duplicated POIs
+            conflated_pois = self._conflate(potential_duplicates)
 
-        return conflated_pois
+            return conflated_pois
+        else:
+            potential_duplicates
 
     def _identify_duplicates(self, data, centroid_idx, address_matrix):
         """
@@ -329,30 +342,45 @@ class POIConflationTool:
             neighbour_idx = list(data.index)
             neighbour_idx.remove(centroid_idx)
             neighbour_data = data.iloc[neighbour_idx]
-            print(centroid_idx)
-            print(neighbour_idx)
-            print(data.index)
 
             address_similarity = cosine_similarity(address_matrix[neighbour_idx, :],
                                                    address_matrix[centroid_idx, :]).reshape(-1, 1)
 
-            name_similarity = np.array([token_set_ratio(data.loc[centroid_idx, 'properties.name'], neighbour_name)
-                                        for neighbour_name
-                                        in neighbour_data['properties.name'].tolist()]).reshape(-1, 1)
+            address_str_similarity = np.array(
+                [token_set_ratio(data.loc[centroid_idx, 'properties.address'].lower(),
+                                 neighbour_address.lower())
+                 if not pd.isnull(neighbour_address) else 0.0
+                 for neighbour_address
+                 in neighbour_data['properties.address'].tolist()]
+            ).reshape(-1, 1)
+
+            name_similarity = np.array(
+                [token_set_ratio(data.loc[centroid_idx, 'properties.name'].lower(),
+                                 neighbour_name.lower())
+                 if not pd.isnull(neighbour_name) else 0.0
+                 for neighbour_name
+                 in neighbour_data['properties.name'].tolist()]
+            ).reshape(-1, 1)
 
             # Pass name and address similarity values into ML models
             predict_prob = np.zeros((len(neighbour_idx), 2))
             for model in self.models:
-                predict_prob += model.predict_proba(np.hstack((address_similarity, name_similarity)))
+                predict_prob += model.predict_proba(np.hstack((address_similarity,
+                                                               address_str_similarity,
+                                                               name_similarity)))
             temp_idx = list(np.where(np.argmax(predict_prob, axis=1) == 1)[0])
-            print(predict_prob)
-            print(temp_idx)
             # POIs are only considered as duplicates if they come from different sources
             duplicate_id = [data.loc[neighbour_idx[idx], 'id'] for idx in temp_idx
                             if data.loc[neighbour_idx[idx], 'properties.source'] !=
                             data.loc[centroid_idx, 'properties.source']]
 
-            return duplicate_id
+            # identify duplicates through exact name matches too
+            exact_match_id = [data.loc[idx, 'id']
+                              for idx in neighbour_idx
+                              if ratio(data.loc[centroid_idx, 'properties.name'].lower(),
+                                       data.loc[idx, 'properties.name'].lower()) == 100]
+
+            return list(set(duplicate_id + exact_match_id))
         else:  # no neighbours
             return []
 
@@ -374,12 +402,13 @@ class POIConflationTool:
             if data.loc[i, 'id'] in processed_id:  # ignore POIs that has been merged
                 continue
 
-            if data.loc[i, 'duplicates']:
-                duplicate_ids, duplicates = self._find_all_duplicates(data.loc[i, 'duplicates'], data)
-                conflated_pois = pd.concat([conflated_pois, self._merge_duplicates(duplicates)], ignore_index=True)
+            if len(data.loc[i, 'duplicates']) > 0:
+                duplicate_ids, duplicates = self._find_all_duplicates(data.loc[i, 'duplicates'] + [data.loc[i, 'id']],
+                                                                      data)
+                conflated_pois = conflated_pois.append(self._merge_duplicates(duplicates), ignore_index=True)
                 processed_id += duplicate_ids
             else:
-                conflated_pois = pd.concat([conflated_pois, data], ignore_index=True)
+                conflated_pois = conflated_pois.append(data.iloc[i], ignore_index=True)
                 processed_id.append(data.loc[i, 'id'])
 
         return conflated_pois
@@ -394,24 +423,25 @@ class POIConflationTool:
             Contains the list of neighbouring POIs.
 
         :return:
-        duplicate_ids: list
+        temp_ids: list
             Contains the full list of IDs that are identified as duplicates
         data[data['id'].isin(duplicate_ids)]: Geodataframe:
             Contains the POIs that are identified as duplicates.
         """
+        temp_ids = deepcopy(duplicate_ids)
         all_duplicates_not_found = True
         while all_duplicates_not_found:
-            temp_data = data[data['id'].isin(duplicate_ids)].reset_index(drop=True)
+            temp_data = data[data['id'].isin(temp_ids)].reset_index(drop=True)
             id_list = list(set([item
                                 for sublist in temp_data['duplicates'].tolist()
-                                for item in sublist] + duplicate_ids))
+                                for item in sublist] + temp_ids))
 
-            if sorted(id_list) == sorted(duplicate_ids):
+            if sorted(id_list) == sorted(temp_ids):
                 all_duplicates_not_found = False
 
-            duplicate_ids = id_list
+            temp_ids = id_list
 
-        return duplicate_ids, data[data['id'].isin(duplicate_ids)]
+        return temp_ids, data[data['id'].isin(temp_ids)]
 
     def _extract_trusted_source_idx(self, data):
         """
@@ -447,15 +477,15 @@ class POIConflationTool:
             Contains the full list of duplicated POIs.
 
         :return:
-        merged_poi: geodataframe
+        merged_poi: geoseries
             Contains the merged POI.
         """
         duplicates.reset_index(drop=True, inplace=True)
         trusted_idx = self._extract_trusted_source_idx(duplicates)
-        merged_poi = gpd.GeoDataFrame()
+        merged_poi = gpd.GeoSeries(crs=4326)
         columns_processed = []
 
-        for column in duplicates.columns:
+        for column in list(duplicates.columns):
             if column in columns_processed:
                 continue
 
@@ -466,22 +496,24 @@ class POIConflationTool:
 
             # geometry coordinates
             elif 'geometry' in column:
-                centroid = geometry.Polygon([[p.x, p.y] for p in duplicates['geometry'].tolist()]).centroid
+                if len(duplicates) > 2:
+                    centroid = geometry.Polygon([[p.x, p.y] for p in duplicates['geometry'].tolist()]).centroid
+                else:
+                    centroid = geometry.LineString([[p.x, p.y] for p in duplicates['geometry'].tolist()]).centroid
                 merged_poi['geometry.lat'] = centroid.y
                 merged_poi['geometry.lng'] = centroid.x
-                merged_poi.geometry = gpd.points_from_xy(centroid.x, centroid.y)
+                merged_poi['geometry'] = centroid
                 columns_processed += ['geometry', 'geometry.lat', 'geometry.lng']
 
             # address
             elif column == 'properties.address':
-                merged_poi['properties.address'] = max(duplicates.loc[trusted_idx,
-                                                                      'properties.address.formatted_address'].tolist(),
+                merged_poi['properties.address'] = max(duplicates.loc[trusted_idx, 'properties.address'].tolist(),
                                                        key=len)
                 columns_processed.append(column)
 
             # name
             elif column == 'properties.name':
-                merged_poi['properties.name'] = max(duplicates.loc[trusted_idx, 'properties.address.name'].tolist(),
+                merged_poi['properties.name'] = max(duplicates.loc[trusted_idx, 'properties.name'].tolist(),
                                                     key=len)
                 columns_processed.append(column)
 
@@ -508,13 +540,13 @@ class POIConflationTool:
             elif 'properties.requires_verification' in column:
                 if 'Yes' in duplicates['properties.requires_verification.summary'].tolist():
                     merged_poi['properties.requires_verification.summary'] = 'Yes'
-                    merged_poi['properties.requires_verification.reasons'] = '; '.join(list(set(
-                        [reason for reason in duplicates['properties.requires_verification.reasons'].tolist()
+                    merged_poi['properties.requires_verification.reason'] = '; '.join(list(set(
+                        [reason for reason in duplicates['properties.requires_verification.reason'].tolist()
                          if not pd.isnull(reason)])))
                 else:
                     merged_poi['properties.requires_verification.summary'] = 'No'
                 columns_processed += ['properties.requires_verification.summary',
-                                      'properties.requires_verification.reasons']
+                                      'properties.requires_verification.reason']
 
             # id information
             elif column == 'id':  # store all ids in a list
@@ -545,17 +577,16 @@ class POIConflationTool:
             else:
                 raise ValueError('{} is not considered!'.format(column))
 
-        assert set(duplicates.columns).issubset(set(columns_processed))
+        assert set(list(duplicates.columns)).issubset(set(columns_processed))
         return merged_poi
 
 
 if __name__ == '__main__':
-    ## extracting POIs based on subzones
-    tool = POIConflationTool(subzones=['PUNGGOL'])
-    tool.here_data.to_file("here_punggol.shp")
-    tool.google_data.to_file("google_punggol.shp")
+    # extracting POIs based on subzones
+    tool = POIConflationTool(subzones=['QUEENSTOWN'])
+    tool.conflate_area_poi()
 
-    ## extracting POIs on the fly
+    # extracting POIs on the fly
     # tool = POIConflationTool()
     # data = pd.read_excel('data/hvp_data/combined_stop_data.xlsx')
     # for i in range(len(data)):

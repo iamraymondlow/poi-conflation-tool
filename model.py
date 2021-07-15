@@ -28,7 +28,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--test_ratio", type=float, default=0.25)
 parser.add_argument("--num_bootstrap", type=int, default=4)
 parser.add_argument("--train_negative_fraction", type=float, default=0.75)
-parser.add_argument("--best_algorithm", type=str, default='GB')
+parser.add_argument("--best_algorithm", type=str, default='RF')
 args = parser.parse_args()
 
 
@@ -54,7 +54,8 @@ class Model:
         # process manually labeled data
         print('Processing manually labeled data for model training...')
         train_test_data = self._process_manual_data(manual_data)
-        train_test_data = pd.DataFrame(train_test_data, columns=['address_similarity', 'name_similarity', 'label'])
+        train_test_data = pd.DataFrame(train_test_data, columns=['address_similarity', 'address_str_similarity',
+                                                                 'name_similarity', 'label'])
 
         # perform data sampling to balance class distribution
         print('Performing data sampling to balance class distribution...')
@@ -68,9 +69,12 @@ class Model:
 
         # evaluate model performance on hold out set
         print('Perform model evaluation...')
-        y_pred_gb = self._predict(gb_models, test_data[['address_similarity', 'name_similarity']])
-        y_pred_rf = self._predict(rf_models, test_data[['address_similarity', 'name_similarity']])
-        y_pred_xgboost = self._predict(xgboost_models, test_data[['address_similarity', 'name_similarity']])
+        y_pred_gb = self._predict(gb_models, test_data[['address_similarity', 'address_str_similarity',
+                                                        'name_similarity']])
+        y_pred_rf = self._predict(rf_models, test_data[['address_similarity', 'address_str_similarity',
+                                                        'name_similarity']])
+        y_pred_xgboost = self._predict(xgboost_models, test_data[['address_similarity', 'address_str_similarity',
+                                                                  'name_similarity']])
         self._evaluate(test_data['label'], y_pred_gb, 'Gradient Boosting')
         self._evaluate(test_data['label'], y_pred_rf, 'Random Forest')
         self._evaluate(test_data['label'], y_pred_xgboost, 'XGBoost')
@@ -206,16 +210,31 @@ class Model:
         neighbour_pois = manual_data[manual_data.intersects(buffer)]
         neighbour_idx = list(neighbour_pois.index)
 
-        # calculate address similarity score for neighbouring POIs
+        # calculate address similarity score for neighbouring POIs based on TFIDF
         centroid_address = address_matrix[centroid_idx, :]
         address_similarity = cosine_similarity(address_matrix[neighbour_idx, :], centroid_address).reshape(-1, 1)
+
+        # calculate address similarity score for neighbouring POIs based on string comparison
+        if pd.isnull(manual_data.loc[centroid_idx, 'properties.address.formatted_address']):
+            return None
+        address_str_similarity = np.array(
+            [token_set_ratio(manual_data.loc[centroid_idx, 'properties.address.formatted_address'].lower(),
+                             neighbour_address.lower())
+             if not pd.isnull(neighbour_address) else 0.0
+             for neighbour_address
+             in manual_data.loc[neighbour_idx, 'properties.address.formatted_address'].tolist()]
+        ).reshape(-1, 1)
 
         # calculate name similarity score for neighbouring POIs
         if pd.isnull(manual_data.loc[centroid_idx, 'properties.name']):
             return None
-        name_similarity = np.array([token_set_ratio(manual_data.loc[centroid_idx, 'properties.name'], neighbour_name)
-                                    for neighbour_name in
-                                    manual_data.loc[neighbour_idx, 'properties.name'].tolist()]).reshape(-1, 1)
+        name_similarity = np.array(
+            [token_set_ratio(manual_data.loc[centroid_idx, 'properties.name'].lower(),
+                             neighbour_name.lower())
+             if not pd.isnull(neighbour_name) else 0.0
+             for neighbour_name
+             in manual_data.loc[neighbour_idx, 'properties.name'].tolist()]
+        ).reshape(-1, 1)
 
         # extract labels for neighbouring POIs
         labels = np.zeros((len(neighbour_idx), 1))
@@ -227,7 +246,7 @@ class Model:
             else:
                 pass
 
-        return np.hstack((address_similarity, name_similarity, labels))
+        return np.hstack((address_similarity, address_str_similarity, name_similarity, labels))
 
     def _process_manual_data(self, manual_data):
         """
@@ -272,25 +291,38 @@ class Model:
             Contains the trained model after hyperparameter tuning.
         """
         if algorithm == 'GB':
-            parameters = {'n_estimators': np.arange(50, 210, 10),
-                          'min_samples_split': np.arange(2, 6, 1),
-                          'min_samples_leaf': np.arange(1, 6, 1),
-                          'max_depth': np.arange(2, 6, 1)}
+            parameters = {'n_estimators': [100],
+                          'min_samples_split': [2],
+                          'min_samples_leaf': [1],
+                          'max_depth': [3]}
+            # parameters = {'n_estimators': np.arange(50, 210, 10),
+            #               'min_samples_split': np.arange(2, 6, 1),
+            #               'min_samples_leaf': np.arange(1, 6, 1),
+            #               'max_depth': np.arange(2, 6, 1)}
             model = GradientBoostingClassifier()
 
         elif algorithm == 'RF':
-            parameters = {'n_estimators': np.arange(50, 210, 10),
-                          'min_samples_split': np.arange(2, 6, 1),
-                          'min_samples_leaf': np.arange(1, 6, 1)}
+            parameters = {'n_estimators': [100],
+                          'min_samples_split': [2],
+                          'min_samples_leaf': [1]}
+            # parameters = {'n_estimators': np.arange(50, 210, 10),
+            #               'min_samples_split': np.arange(2, 6, 1),
+            #               'min_samples_leaf': np.arange(1, 6, 1)}
             model = RandomForestClassifier()
 
         elif algorithm == 'XGB':
-            parameters = {'n_estimators': np.arange(50, 210, 10),
-                          'learning_rate': [0.10, 0.20, 0.30],
-                          'max_depth': [4, 6, 8, 10, 12, 15],
-                          'min_child_weight': [1, 3, 5, 7],
-                          'gamma': [0.0, 0.1, 0.2, 0.3, 0.4],
-                          'colsample_bytree': [0.3, 0.4, 0.5, 0.7]}
+            parameters = {'n_estimators': [100],
+                          'learning_rate': [0.3],
+                          'max_depth': [3],
+                          'min_child_weight': [1],
+                          'gamma': [0],
+                          'colsample_bytree': [1]}
+            # parameters = {'n_estimators': np.arange(50, 210, 10),
+            #               'learning_rate': [0.10, 0.20, 0.30],
+            #               'max_depth': [4, 6, 8, 10, 12, 15],
+            #               'min_child_weight': [1, 3, 5, 7],
+            #               'gamma': [0.0, 0.1, 0.2, 0.3, 0.4],
+            #               'colsample_bytree': [0.3, 0.4, 0.5, 0.7]}
             model = xgb.XGBClassifier()
 
         else:
@@ -298,7 +330,7 @@ class Model:
 
         grid_search = GridSearchCV(model, parameters, scoring=['balanced_accuracy', 'f1_macro'],
                                    n_jobs=-1, refit='f1_macro')
-        grid_search.fit(train_data[['address_similarity', 'name_similarity']],
+        grid_search.fit(train_data[['address_similarity', 'address_str_similarity', 'name_similarity']],
                         train_data['label'])
         return grid_search
 
