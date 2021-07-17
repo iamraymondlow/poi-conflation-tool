@@ -4,7 +4,7 @@ import os
 import time
 import pandas as pd
 import geopandas as gpd
-from util import remove_duplicate, extract_date, divide_bounding_box, pixelise_region
+from util import extract_date, divide_bounding_box, pixelise_region
 
 # load config file
 with open(os.path.join(os.path.dirname(__file__), 'config.json')) as f:
@@ -102,6 +102,7 @@ class GoogleMapScrapper:
         while not_successful:
             try:
                 query_result = self._perform_query(lat=lat, lng=lng)
+                print(query_result)
 
                 if (query_result['status'] == 'OK') and (query_result['results']):
                     formatted_results = self._format_query_result(query_result['results'], stop_id)
@@ -128,9 +129,6 @@ class GoogleMapScrapper:
                             feature_collection = {'type': 'FeatureCollection',
                                                   'features': formatted_results}
                             json.dump(feature_collection, json_file)
-
-                    # Removing duplicate data
-                    remove_duplicate(cache_directory)
 
                     return formatted_results
 

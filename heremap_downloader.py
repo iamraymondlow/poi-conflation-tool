@@ -4,7 +4,7 @@ import os
 import time
 import pandas as pd
 import geopandas as gpd
-from util import remove_duplicate, extract_date, divide_bounding_box, pixelise_region
+from util import extract_date, divide_bounding_box, pixelise_region
 
 # load config file
 with open(os.path.join(os.path.dirname(__file__), 'config.json')) as f:
@@ -122,9 +122,6 @@ class HereMapScrapper:
                             feature_collection = {'type': 'FeatureCollection',
                                                   'features': formatted_results}
                             json.dump(feature_collection, json_file)
-
-                    # Removing duplicate data
-                    remove_duplicate(cache_directory)
 
                     return formatted_results
 
