@@ -19,9 +19,11 @@ class SLA:
         data = None
         for trade_code in config['sla_trade_codes']:
             if data is None:
-                data = gpd.read_file(config['sla_data_directory'].format(trade_code))
+                data = gpd.read_file(os.path.join(os.path.dirname(__file__),
+                                                  config['sla_data_directory'].format(trade_code)))
             else:
-                data = data.append(gpd.read_file(config['sla_data_directory'].format(trade_code)))
+                data = data.append(gpd.read_file(os.path.join(os.path.dirname(__file__),
+                                                              config['sla_data_directory'].format(trade_code))))
         data.reset_index(drop=True, inplace=True)
 
         # Perform abbreviation mapping
@@ -35,13 +37,13 @@ class SLA:
         data['LNG'] = lng
 
         # Transform into JSON format and save on local directory
-        with open(config['sla_cache'], 'w') as json_file:
+        with open(os.path.join(os.path.dirname(__file__), config['sla_cache']), 'w') as json_file:
             feature_collection = {'type': 'FeatureCollection',
                                   'features': self._format_features(data)}
             json.dump(feature_collection, json_file)
 
         # Remove duplicated information
-        remove_duplicate(config['sla_cache'])
+        remove_duplicate(os.path.join(os.path.dirname(__file__), config['sla_cache']))
 
     def _perform_mapping(self, gpd_file):
         """
@@ -55,7 +57,7 @@ class SLA:
             Contains the SLA dataset with its TRADE_CODE, TRADE_TYPE, and DATA_TYPE information mapped to its
             human readable form.
         """
-        placetype_mapping = pd.read_excel(config['sla_mapping'])
+        placetype_mapping = pd.read_excel(os.path.join(os.path.dirname(__file__), config['sla_mapping']))
         abbreviation_list = placetype_mapping['trade_code'].tolist()
 
         # Perform mapping for TRADE_CODE

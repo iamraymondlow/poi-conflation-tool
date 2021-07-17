@@ -49,11 +49,12 @@ class POIConflationTool:
         print('Loading conflated data from local directory...')
         if subzones is None:
             if not os.path.exists(os.path.join(os.path.dirname(__file__), config['conflated_cache'])):
-                if not os.path.exists(config['conflated_directory']):
-                    os.makedirs(config['conflated_directory'])
+                if not os.path.exists(os.path.join(os.path.dirname(__file__), config['conflated_directory'])):
+                    os.makedirs(os.path.join(os.path.dirname(__file__), config['conflated_directory']))
                 self.conflated_data = None
             else:
-                self.conflated_data = gpd.read_file(os.path.join(os.path.dirname(__file__), config['conflated_cache']),
+                self.conflated_data = gpd.read_file(os.path.join(os.path.dirname(__file__),
+                                                                 config['conflated_cache']),
                                                     encoding='utf-8')
         else:
             self.conflated_data = None
@@ -62,10 +63,10 @@ class POIConflationTool:
         print('Loading OneMap data from local directory...')
         if not os.path.exists(os.path.join(os.path.dirname(__file__), config['onemap_cache'])):
             OneMap().format_data()
-        onemap_data = self._load_json_as_geopandas(config['onemap_cache'])
+        onemap_data = self._load_json_as_geopandas(os.path.join(os.path.dirname(__file__), config['onemap_cache']))
         if subzones is not None:
-            self.onemap_data = onemap_data[onemap_data.intersects(country_shp.loc[0,
-                                                                                  'geometry'])].reset_index(drop=True)
+            self.onemap_data = onemap_data[onemap_data.intersects(
+                country_shp.loc[0, 'geometry'])].reset_index(drop=True)
         else:
             self.onemap_data = onemap_data
 
@@ -73,7 +74,7 @@ class POIConflationTool:
         print('Loading SLA data from local directory...')
         if not os.path.exists(os.path.join(os.path.dirname(__file__), config['sla_cache'])):
             SLA().format_data()
-        sla_data = self._load_json_as_geopandas(config['sla_cache'])
+        sla_data = self._load_json_as_geopandas(os.path.join(os.path.dirname(__file__), config['sla_cache']))
         if subzones is not None:
             self.sla_data = sla_data[sla_data.intersects(country_shp.loc[0, 'geometry'])].reset_index(drop=True)
         else:
@@ -83,7 +84,7 @@ class POIConflationTool:
         print('Loading OSM data from local directory...')
         if not os.path.exists(os.path.join(os.path.dirname(__file__), config['osm_cache'])):
             OSM().format_data()
-        osm_data = self._load_json_as_geopandas(config['osm_cache'])
+        osm_data = self._load_json_as_geopandas(os.path.join(os.path.dirname(__file__), config['osm_cache']))
         if subzones is not None:
             self.osm_data = osm_data[osm_data.intersects(country_shp.loc[0, 'geometry'])].reset_index(drop=True)
         else:
@@ -94,37 +95,41 @@ class POIConflationTool:
         self.google_scrapper = GoogleMapScrapper(config['search_radius'])
         if subzones is None:
             if os.path.exists(os.path.join(os.path.dirname(__file__), config['google_cache'])):
-                self.google_data = self._load_json_as_geopandas(config['google_cache'])
+                self.google_data = self._load_json_as_geopandas(os.path.join(os.path.dirname(__file__),
+                                                                             config['google_cache']))
             else:
                 self.google_data = None
         else:
             if not os.path.exists(os.path.join(os.path.dirname(__file__), config['google_area_cache'])):
                 self.google_data = self.google_scrapper.extract_area(subzones=subzones)
-            google_data = self._load_json_as_geopandas(config['google_area_cache'])
-            self.google_data = google_data[google_data.intersects(country_shp.loc[0,
-                                                                                  'geometry'])].reset_index(drop=True)
+            google_data = self._load_json_as_geopandas(os.path.join(os.path.dirname(__file__),
+                                                                    config['google_area_cache']))
+            self.google_data = google_data[google_data.intersects(
+                country_shp.loc[0, 'geometry'])].reset_index(drop=True)
 
         # load formatted HERE Map data. If it does not exist, save as None.
         print('Loading HERE Map data from local directory...')
         self.here_scrapper = HereMapScrapper(config['search_radius'])
         if subzones is None:
             if os.path.exists(os.path.join(os.path.dirname(__file__), config['here_cache'])):
-                self.here_data = self._load_json_as_geopandas(config['here_cache'])
+                self.here_data = self._load_json_as_geopandas(os.path.join(os.path.dirname(__file__),
+                                                                           config['here_cache']))
             else:
                 self.here_data = None
         else:
             if not os.path.exists(os.path.join(os.path.dirname(__file__), config['here_area_cache'])):
                 self.here_data = self.here_scrapper.extract_area(subzones=subzones)
-            here_data = self._load_json_as_geopandas(config['here_area_cache'])
+            here_data = self._load_json_as_geopandas(os.path.join(os.path.dirname(__file__),
+                                                                  config['here_area_cache']))
             self.here_data = here_data[here_data.intersects(country_shp.loc[0, 'geometry'])].reset_index(drop=True)
 
         # check if machine learning model is trained. If not, train model.
-        # model = Model()
-        # if not os.listdir(os.path.join(os.path.dirname(__file__), config['models_directory'])):
-        #     model.train_model()
-        # model_filenames = glob.glob(os.path.join(os.path.dirname(__file__),
-        #                                          config['models_directory'] + 'model_?.joblib'))
-        # self.models = [load(filename) for filename in model_filenames]
+        model = Model()
+        if not os.listdir(os.path.join(os.path.dirname(__file__), config['models_directory'])):
+            model.train_model()
+        model_filenames = glob.glob(os.path.join(os.path.dirname(__file__),
+                                                 config['models_directory'] + 'model_?.joblib'))
+        self.models = [load(filename) for filename in model_filenames]
 
     def _load_json_as_geopandas(self, cache_directory):
         """
@@ -239,16 +244,16 @@ class POIConflationTool:
             Contains the conflated POIs.
         """
         # create circular buffer around POI
-        # buffer = self._buffer_in_meters(lng, lat, config['search_radius'])
+        buffer = self._buffer_in_meters(lng, lat, config['search_radius'])
 
         # extracts neighbouring POIs from OSM
-        # osm_pois = self.osm_data[self.osm_data.intersects(buffer)]
+        osm_pois = self.osm_data[self.osm_data.intersects(buffer)]
         #
         # # extract neighbouring POIs from OneMap
-        # onemap_pois = self.onemap_data[self.onemap_data.intersects(buffer)]
+        onemap_pois = self.onemap_data[self.onemap_data.intersects(buffer)]
         #
         # # extract neighbouring POIs from SLA
-        # sla_pois = self.sla_data[self.sla_data.intersects(buffer)]
+        sla_pois = self.sla_data[self.sla_data.intersects(buffer)]
 
         # extract neighbouring POIs from GoogleMap either locally or using API
         if (self.google_data is not None) and (stop_id in self.google_data['stop'].tolist()):
@@ -269,20 +274,20 @@ class POIConflationTool:
                 self.here_data = here_pois
             else:
                 self.here_data = pd.concat([self.here_data, here_pois], ignore_index=True)
-        #
-        # # perform conflation
-        # combined_pois = pd.concat([osm_pois, onemap_pois, sla_pois,
-        #                            google_pois, here_pois], ignore_index=True)
-        # conflated_pois = self._perform_conflation(combined_pois)
-        #
-        # # cache conflated POIs
-        # self.conflated_data = pd.concat([self.conflated_data, conflated_pois], ignore_index=True)
-        # if 'duplicates' in self.conflated_data.columns:
-        #     self.conflated_data.drop(columns=['duplicates'], inplace=True)
-        # self.conflated_data.to_file(os.path.join(os.path.dirname(__file__), config['conflated_cache']),
-        #                             encoding='utf-8')
-        #
-        # return conflated_pois
+
+        # perform conflation
+        combined_pois = pd.concat([osm_pois, onemap_pois, sla_pois,
+                                   google_pois, here_pois], ignore_index=True)
+        conflated_pois = self._perform_conflation(combined_pois)
+
+        # cache conflated POIs
+        self.conflated_data = pd.concat([self.conflated_data, conflated_pois], ignore_index=True)
+        if 'duplicates' in self.conflated_data.columns:
+            self.conflated_data.drop(columns=['duplicates'], inplace=True)
+        self.conflated_data.to_file(os.path.join(os.path.dirname(__file__), config['conflated_cache']),
+                                    encoding='utf-8')
+
+        return conflated_pois
 
     def _perform_conflation(self, potential_duplicates):
         """
@@ -581,16 +586,16 @@ class POIConflationTool:
         return merged_poi
 
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
     # extracting POIs based on subzones
     # tool = POIConflationTool(subzones=['QUEENSTOWN'])
     # tool.conflate_area_poi()
 
     # extracting POIs on the fly
-    tool = POIConflationTool()
-    data = pd.read_excel('data/hvp_data/combined_stop_data.xlsx')
-    for i in range(len(data)):
-        print('Processing {}/{}'.format(i+1, len(data)))
-        tool.extract_poi(data.loc[i, 'StopLat'],
-                         data.loc[i, 'StopLon'],
-                         str(data.loc[i, 'StopID']))
+    # tool = POIConflationTool()
+    # data = pd.read_excel('data/hvp_data/combined_stop_data.xlsx')
+    # for i in range(len(data)):
+    #     print('Processing {}/{}'.format(i+1, len(data)))
+    #     tool.extract_poi(data.loc[i, 'StopLat'],
+    #                      data.loc[i, 'StopLon'],
+    #                      str(data.loc[i, 'StopID']))

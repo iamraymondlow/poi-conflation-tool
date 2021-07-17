@@ -95,19 +95,20 @@ class HereMapScrapper:
         """
         not_successful = True
         if query_area:
-            cache_directory = config['here_area_cache']
+            cache_directory = os.path.join(os.path.dirname(__file__), config['here_area_cache'])
         else:
-            cache_directory = config['here_cache']
+            cache_directory = os.path.join(os.path.dirname(__file__), config['here_cache'])
         while not_successful:
             try:
                 query_result = self._perform_query(lat=lat, lng=lng)
+                print(query_result)
 
                 if query_result['results']['items']:
                     formatted_results = self._format_query_result(query_result['results']['items'], stop_id)
 
                     # store results as cache
-                    if not os.path.exists(config['here_directory']):
-                        os.makedirs(config['here_directory'])
+                    if not os.path.exists(os.path.join(os.path.dirname(__file__), config['here_directory'])):
+                        os.makedirs(os.path.join(os.path.dirname(__file__), config['here_directory']))
 
                     if os.path.exists(cache_directory):  # cache exists
                         with open(cache_directory) as json_file:
@@ -164,7 +165,7 @@ class HereMapScrapper:
         mapped_placetype[0]: str
             Contains the mapped place type based on Google's taxonomy.
         """
-        mapping = pd.read_excel(config['here_mapping'])
+        mapping = pd.read_excel(os.path.join(os.path.dirname(__file__), config['here_mapping']))
         mapped_placetype = mapping[mapping['here_placetype'] == placetype]['google_mapping'].tolist()
 
         if len(mapped_placetype) == 0:

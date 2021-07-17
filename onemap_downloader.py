@@ -17,7 +17,7 @@ class OneMap:
         Formats the OSM dataset into a custom schema and saves it locally.
         """
         # Extract query name based on selected place types/themes
-        theme_mapping = pd.read_excel(config['onemap_mapping'])
+        theme_mapping = pd.read_excel(os.path.join(os.path.dirname(__file__), config['onemap_mapping']))
         themes, query_names = self._extract_query_name(theme_mapping['themes'].to_list())
         assert len(themes) == len(query_names)
 
@@ -39,28 +39,28 @@ class OneMap:
             i += 1
 
             # load local json file to store query output
-            if not os.path.exists(config['onemap_directory']):
-                os.makedirs(config['onemap_directory'])
+            if not os.path.exists(os.path.join(os.path.dirname(__file__), config['onemap_directory'])):
+                os.makedirs(os.path.join(os.path.dirname(__file__), config['onemap_directory']))
 
-            if os.path.exists(config['onemap_cache']):
-                with open(config['onemap_cache']) as json_file:
+            if os.path.exists(os.path.join(os.path.dirname(__file__), config['onemap_cache'])):
+                with open(os.path.join(os.path.dirname(__file__), config['onemap_cache'])) as json_file:
                     feature_collection = json.load(json_file)
                     feature_collection['features'] += self._format_query_result(query_result['SrchResults'][2:],
                                                                                 themes[j], theme_mapping)
 
                 # save query output as json file
-                with open(config['onemap_cache'], 'w') as json_file:
+                with open(os.path.join(os.path.dirname(__file__), config['onemap_cache']), 'w') as json_file:
                     json.dump(feature_collection, json_file)
 
             else:
-                with open(config['onemap_cache'], 'w') as json_file:
+                with open(os.path.join(os.path.dirname(__file__), config['onemap_cache']), 'w') as json_file:
                     feature_collection = {'type': 'FeatureCollection',
                                           'features': self._format_query_result(query_result['SrchResults'][2:],
                                                                                 themes[j], theme_mapping)}
                     json.dump(feature_collection, json_file)
 
         # Remove duplicated information
-        remove_duplicate(config['onemap_cache'])
+        remove_duplicate(os.path.join(os.path.dirname(__file__), config['onemap_cache']))
 
     def _extract_query_name(self, themes):
         """

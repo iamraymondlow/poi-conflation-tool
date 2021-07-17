@@ -96,9 +96,9 @@ class GoogleMapScrapper:
         """
         not_successful = True
         if query_area:
-            cache_directory = config['google_area_cache']
+            cache_directory = os.path.join(os.path.dirname(__file__), config['google_area_cache'])
         else:
-            cache_directory = config['google_cache']
+            cache_directory = os.path.join(os.path.dirname(__file__), config['google_cache'])
         while not_successful:
             try:
                 query_result = self._perform_query(lat=lat, lng=lng)
@@ -113,8 +113,8 @@ class GoogleMapScrapper:
                         formatted_results += self._format_query_result(query_result['results'], stop_id)
 
                     # store results as cache
-                    if not os.path.exists(config['google_directory']):
-                        os.makedirs(config['google_directory'])
+                    if not os.path.exists(os.path.join(os.path.dirname(__file__), config['google_directory'])):
+                        os.makedirs(os.path.join(os.path.dirname(__file__), config['google_directory']))
 
                     if os.path.exists(cache_directory):  # cache exists
                         with open(cache_directory) as json_file:

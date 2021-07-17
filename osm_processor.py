@@ -20,12 +20,13 @@ class OSM:
         Formats the OSM dataset into a custom schema and saves it locally.
         """
         # Import shapefile for Singapore
-        country_shapefile = gpd.read_file(config['country_shapefile'])
+        country_shapefile = gpd.read_file(os.path.join(os.path.dirname(__file__), config['country_shapefile']))
         country_shapefile = country_shapefile.to_crs(epsg=4326)
 
         # Import shape file for OSM POI data
         for filename in config['osm_filenames']:
-            poi_shp = gpd.read_file(config['osm_data_directory'].format(filename))
+            poi_shp = gpd.read_file(os.path.join(os.path.dirname(__file__),
+                                                 config['osm_data_directory'].format(filename)))
             poi_shp = poi_shp.to_crs(epsg=4326)
 
             # format POI data
@@ -35,22 +36,22 @@ class OSM:
                     formatted_poi = self._format_poi(poi_shp.iloc[i])
 
                     # save formatted POI data locally
-                    if os.path.exists(config['osm_cache']):
-                        with open(config['osm_cache']) as json_file:
+                    if os.path.exists(os.path.join(os.path.dirname(__file__), config['osm_cache'])):
+                        with open(os.path.join(os.path.dirname(__file__), config['osm_cache'])) as json_file:
                             feature_collection = json.load(json_file)
                             feature_collection['features'].append(formatted_poi)
 
-                        with open(config['osm_cache'], 'w') as json_file:
+                        with open(os.path.join(os.path.dirname(__file__), config['osm_cache']), 'w') as json_file:
                             json.dump(feature_collection, json_file)
                     else:
-                        with open(config['osm_cache'], 'w') as json_file:
+                        with open(os.path.join(os.path.dirname(__file__), config['osm_cache']), 'w') as json_file:
                             feature_collection = {'type': 'FeatureCollection', 'features': [formatted_poi]}
                             json.dump(feature_collection, json_file)
                 else:
                     continue
 
         # Remove duplicated information
-        remove_duplicate(config['osm_cache'])
+        remove_duplicate(os.path.join(os.path.dirname(__file__), config['osm_cache']))
 
     def _check_valid_address_string(self, query_result, address_segment):
         """
@@ -129,7 +130,7 @@ class OSM:
         Returns the original place type if there is no appropriate mapping and a boolean False value. Otherwise,
         returns the mapped place type from Google's taxonomy and a boolean True value.
         """
-        placetype_mapping = pd.read_excel(config['osm_mapping'])
+        placetype_mapping = pd.read_excel(os.path.join(os.path.dirname(__file__), config['osm_mapping']))
         placetype_list = placetype_mapping[placetype_mapping['osm_placetype'] == place_type]['google_mapping'].tolist()
         if len(placetype_list) == 0:
             return place_type, False
