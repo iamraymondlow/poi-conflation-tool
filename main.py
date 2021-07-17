@@ -5,11 +5,11 @@ import geopandas as gpd
 import pyproj
 import glob
 import numpy as np
-from googlemap_downloader import GoogleMapScrapper
-from heremap_downloader import HereMapScrapper
-from onemap_downloader import OneMap
-from osm_processor import OSM
-from sla_processor import SLA
+from googlemap import GoogleMapScrapper
+from heremap import HereMapScrapper
+from onemap import OneMap
+from osm import OSM
+from sla import SLA
 from shapely.geometry import Point
 from shapely.ops import transform
 from model import Model
