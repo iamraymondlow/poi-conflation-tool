@@ -290,38 +290,38 @@ class Model:
             Contains the trained model after hyperparameter tuning.
         """
         if algorithm == 'GB':
-            # parameters = {'n_estimators': [100],
-            #               'min_samples_split': [2],
-            #               'min_samples_leaf': [1],
-            #               'max_depth': [3]}
-            parameters = {'n_estimators': np.arange(50, 210, 10),
-                          'min_samples_split': np.arange(2, 6, 1),
-                          'min_samples_leaf': np.arange(1, 6, 1),
-                          'max_depth': np.arange(2, 6, 1)}
+            parameters = {'n_estimators': [100],
+                          'min_samples_split': [2],
+                          'min_samples_leaf': [1],
+                          'max_depth': [3]}
+            # parameters = {'n_estimators': np.arange(50, 210, 10),
+            #               'min_samples_split': np.arange(2, 6, 1),
+            #               'min_samples_leaf': np.arange(1, 6, 1),
+            #               'max_depth': np.arange(2, 6, 1)}
             model = GradientBoostingClassifier()
 
         elif algorithm == 'RF':
-            # parameters = {'n_estimators': [100],
-            #               'min_samples_split': [2],
-            #               'min_samples_leaf': [1]}
-            parameters = {'n_estimators': np.arange(50, 210, 10),
-                          'min_samples_split': np.arange(2, 6, 1),
-                          'min_samples_leaf': np.arange(1, 6, 1)}
+            parameters = {'n_estimators': [100],
+                          'min_samples_split': [2],
+                          'min_samples_leaf': [1]}
+            # parameters = {'n_estimators': np.arange(50, 210, 10),
+            #               'min_samples_split': np.arange(2, 6, 1),
+            #               'min_samples_leaf': np.arange(1, 6, 1)}
             model = RandomForestClassifier()
 
         elif algorithm == 'XGB':
-            # parameters = {'n_estimators': [100],
-            #               'learning_rate': [0.3],
-            #               'max_depth': [3],
-            #               'min_child_weight': [1],
-            #               'gamma': [0],
-            #               'colsample_bytree': [1]}
-            parameters = {'n_estimators': np.arange(50, 210, 10),
-                          'learning_rate': [0.10, 0.20, 0.30],
-                          'max_depth': [4, 6, 8, 10, 12, 15],
-                          'min_child_weight': [1, 3, 5, 7],
-                          'gamma': [0.0, 0.1, 0.2, 0.3, 0.4],
-                          'colsample_bytree': [0.3, 0.4, 0.5, 0.7]}
+            parameters = {'n_estimators': [100],
+                          'learning_rate': [0.3],
+                          'max_depth': [3],
+                          'min_child_weight': [1],
+                          'gamma': [0],
+                          'colsample_bytree': [1]}
+            # parameters = {'n_estimators': np.arange(50, 210, 10),
+            #               'learning_rate': [0.10, 0.20, 0.30],
+            #               'max_depth': [4, 6, 8, 10, 12, 15],
+            #               'min_child_weight': [1, 3, 5, 7],
+            #               'gamma': [0.0, 0.1, 0.2, 0.3, 0.4],
+            #               'colsample_bytree': [0.3, 0.4, 0.5, 0.7]}
             model = xgb.XGBClassifier()
 
         else:

@@ -252,15 +252,10 @@ class GoogleMapScrapper:
                                'place_type': self._concat_placetype(query_result[i]['types']),
                                'source': 'GoogleMap',
                                'requires_verification': {'summary': 'No'}},
-                'stop': stop_id,
+                'stop': str(stop_id),
                 'id': str(query_result[i]['place_id']),
                 'extraction_date': extract_date()
             }
             poi_data.append(poi_dict)
 
         return poi_data
-
-
-if __name__ == '__main__':
-    scrapper = GoogleMapScrapper(config['search_radius'])
-    scrapper.extract_area(subzones=['PUNGGOL', 'QUEENSTOWN'])

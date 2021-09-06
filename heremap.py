@@ -218,15 +218,10 @@ class HereMapScrapper:
                                'tags': tags,
                                'source': 'HereMap',
                                'requires_verification': verification},
-                'stop': stop_id,
+                'stop': str(stop_id),
                 'id': str(query_result[i]['id']),
                 'extraction_date': extract_date()
             }
             poi_data.append(poi_dict)
 
         return poi_data
-
-
-if __name__ == '__main__':
-    scrapper = HereMapScrapper(config['search_radius'])
-    scrapper.extract_area(subzones=['PUNGGOL', 'QUEENSTOWN'])
