@@ -45,6 +45,10 @@ class POIConflationTool:
             country_shp = country_shp[country_shp['PLN_AREA_N'].isin(subzones)].reset_index(drop=True)
         self.country_shp = country_shp
 
+        # load locally cached POIs that was conflated in the past
+        print('Loading conflated data from local directory...')
+        self.conflated_data = None
+
         # load formatted OneMap data. If it does not exist, format and load data.
         print('Loading OneMap data from local directory...')
         if not os.path.exists(os.path.join(os.path.dirname(__file__), config['onemap_cache'])):
@@ -605,24 +609,22 @@ class POIConflationTool:
         return merged_poi
 
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
     # extracting POIs based on subzones
-    tool = POIConflationTool(subzones=['TAMPINES'])
-    tool.conflate_area_poi()
-    conflated_data = tool.conflated_data
-    osm_data = tool.osm_data
-    sla_data = tool.sla_data
-    google_data = tool.google_data
-    here_data = tool.here_data
-    onemap_data = tool.onemap_data
-
-    conflated_data.to_excel('conflated_data.xlsx', index=False)
-    osm_data.to_excel('osm_data.xlsx', index=False)
-    sla_data.to_excel('sla_data.xlsx', index=False)
-    google_data.to_excel('google_data.xlsx', index=False)
-    here_data.to_excel('here_data.xlsx', index=False)
-    onemap_data.to_excel('onemap_data.xlsx', index=False)
-
+    # tool = POIConflationTool(subzones=['TAMPINES'])
+    # tool.conflate_area_poi()
+    # conflated_data = tool.conflated_data
+    # osm_data = tool.osm_data
+    # sla_data = tool.sla_data
+    # google_data = tool.google_data
+    # here_data = tool.here_data
+    # onemap_data = tool.onemap_data
+    # conflated_data.to_excel('data/conflated_data_tampines.xlsx', index=False)
+    # osm_data.to_excel('data/osm/osm_data_tampines.xlsx', index=False)
+    # sla_data.to_excel('data/sla/sla_data_tampines.xlsx', index=False)
+    # google_data.to_excel('data/googlemap/google_data_tampines.xlsx', index=False)
+    # here_data.to_excel('data/heremap/here_data_tampines.xlsx', index=False)
+    # onemap_data.to_excel('data/onemap/onemap_data_tampines.xlsx', index=False)
 
     # extracting POIs on the fly
     # tool = POIConflationTool()
